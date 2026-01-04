@@ -1,3 +1,7 @@
+Notes:
+- manage state if package is gone from the list we need to remove it?
+
+
 Here is a speculative design for the **`settle`** CLI.
 
 Since the tool combines **package management** (stateful system changes) and **dotfiles** (symlinking/templating), the arguments should clearly separate these concerns while offering a "do it all" default.

@@ -52,18 +52,14 @@ func installPackages(packages []string) error {
         return nil
     }
 
-    // Prepare args: install -y pkg1 pkg2 pkg3 ...
     args := append([]string{"install", "-y"}, packages...)
 
-    // Command: sudo apt-get install -y pkg1 pkg2 ...
     cmd := exec.Command("sudo", append([]string{"apt-get"}, args...)...)
 
-    // Connect IO so you can see progress and type sudo password if needed
     cmd.Stdout = os.Stdout
     cmd.Stderr = os.Stderr
     cmd.Stdin = os.Stdin
 
-    // Set non-interactive mode to avoid UI prompts (but allow sudo password)
     cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 
     fmt.Printf("Installing %d packages...\n", len(packages))
