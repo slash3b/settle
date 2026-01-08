@@ -1,69 +1,102 @@
 package main
 
 import (
-    "fmt"
-    "log"
-    "os"
-    "os/exec"
-    "runtime"
-
-    "github.com/pelletier/go-toml/v2"
+	"fmt"
+	"log"
+	"os"
+	"runtime"
 )
 
-type Config struct {
-	Packages struct {
-		List []string `toml:"list"`
-	} `toml:"packages"`
-}
-
 func main() {
-    if runtime.GOOS != "linux" {
-        fmt.Fprintf(os.Stderr, "%s is not supported", runtime.GOOS)
-        os.Exit(1);
-    }
+	if runtime.GOOS != "linux" {
+		fmt.Fprintf(os.Stderr, "%s is not supported\n", runtime.GOOS)
+		os.Exit(1)
+	}
 
-	data, err := os.ReadFile("config.toml")
+	// Load config from default location
+	// TODO: Support custom paths via --config flag
+	cfg, err := loadConfig(defaultConfigPath)
 	if err != nil {
-		log.Fatalf("Error reading file: %v", err)
+		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	var cfg Config
-	err = toml.Unmarshal(data, &cfg)
-	if err != nil {
-		log.Fatalf("Error parsing TOML: %v", err)
+	// Detect which managers are configured
+	managersFound := 0
+
+	if cfg.Debian != nil {
+		managersFound++
 	}
 
-	fmt.Println("Successfully loaded packages:")
-	for i, pkg := range cfg.Packages.List {
-		fmt.Printf("%d: %s\n", i+1, pkg)
+	if managersFound == 0 {
+		fmt.Fprintf(os.Stderr, "No package managers configured in config.toml\n")
+		os.Exit(1)
 	}
-	
-	fmt.Printf("\nTotal packages: %d\n", len(cfg.Packages.List))
 
+	// Process each configured manager
+	if cfg.Debian != nil {
+		if err := handleDebian(cfg.Debian); err != nil {
+			fmt.Fprintf(os.Stderr, "Error handling Debian packages: %v\n", err)
+			os.Exit(1)
+		}
+	}
 
-    if err := installPackages(cfg.Packages.List); err != nil {
-        fmt.Printf("Error installing packages: %v\n", err)
-        os.Exit(1)
-    }
+	// Future managers would be handled here:
+	// if cfg.Cargo != nil {
+	//     if err := handleCargo(cfg.Cargo); err != nil {
+	//         os.Exit(1)
+	//     }
+	// }
+
+	fmt.Println("Done!")
 }
 
-func installPackages(packages []string) error {
-    if len(packages) == 0 {
-        return nil
-    }
+func handleDebian(debianCfg *DebianConfig) error {
+	debian := NewDebianManager()
 
-    args := append([]string{"install", "-y"}, packages...)
+	// Collect all packages
+	allPackages := make([]string, 0, len(debianCfg.Packages)+len(debianCfg.Package))
+	allPackages = append(allPackages, debianCfg.Packages...)
 
-    cmd := exec.Command("sudo", append([]string{"apt-get"}, args...)...)
+	// Add packages with post-install hooks
+	for _, pkg := range debianCfg.Package {
+		allPackages = append(allPackages, pkg.Name)
+	}
 
-    cmd.Stdout = os.Stdout
-    cmd.Stderr = os.Stderr
-    cmd.Stdin = os.Stdin
+	if len(allPackages) == 0 {
+		fmt.Println("No Debian packages configured")
+		return nil
+	}
 
-    cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+	fmt.Printf("Checking %d Debian packages...\n", len(allPackages))
 
-    fmt.Printf("Installing %d packages...\n", len(packages))
+	// Check which packages are not installed
+	missingPackages, err := debian.CheckInstalled(allPackages)
+	if err != nil {
+		return fmt.Errorf("error checking packages: %w", err)
+	}
 
-    return cmd.Run()
+	installedCount := len(allPackages) - len(missingPackages)
+	fmt.Printf("Already installed: %d\n", installedCount)
+	fmt.Printf("Need to install: %d\n", len(missingPackages))
+
+	// Install missing packages
+	if len(missingPackages) > 0 {
+		if err := debian.Install(missingPackages); err != nil {
+			return fmt.Errorf("error installing packages: %w", err)
+		}
+	} else {
+		fmt.Println("All Debian packages already installed!")
+	}
+
+	// Run post-install scripts for packages that have them
+	for _, pkg := range debianCfg.Package {
+		if pkg.PostInstall != "" {
+			if err := debian.RunPostInstall(pkg.Name, pkg.PostInstall); err != nil {
+				return fmt.Errorf("error running post-install for %s: %w", pkg.Name, err)
+			}
+		}
+	}
+
+	return nil
 }
 
