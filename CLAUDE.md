@@ -165,6 +165,52 @@ go get <package>
 3. **Config location:** Currently hardcoded to `config.toml` in the working directory
 4. **Non-interactive apt:** Uses `DEBIAN_FRONTEND=noninteractive` to prevent prompts during package installation
 
+## Design Philosophy & Priorities
+
+### What Makes Settle Different
+
+Settle combines **package management** and **dotfile management** in a single declarative config. Most tools focus on one or the other (chezmoi/dotbot for dotfiles, Ansible/NixOS for system config). The value proposition is simplicity - one TOML file, one command, consistent environment.
+
+### Core Strengths
+
+1. **Declarative Philosophy**: "Read the TOML, make the machine match" - the config file is the source of truth, not a script that runs commands
+2. **Idempotent by Design**: Running `settle` multiple times should be safe and fast (skip what's already correct)
+3. **Version Control Native**: `~/dotfiles/config.toml` lives in git, making environment changes reviewable and portable
+4. **Ergonomic UX**: `settle install <pkg>` modifies the TOML (not just your system), encouraging declarative thinking
+
+### Implementation Priorities
+
+When adding features, prioritize in this order:
+
+1. **Dotfile symlinking** - Self-contained, immediately valuable, simpler than package management
+2. **Robust apt package management** - Get the basics solid before adding cargo/go providers
+3. **Idempotent apply logic** - The killer feature; running settle should be fast when nothing changed
+4. **Simple post-install hooks** - Start with basic shell command execution, expand later
+5. **Multi-provider support** - Only after apt is solid
+
+### Key Architectural Challenges
+
+**State Tracking**: Do you auto-remove packages removed from config.toml? This is philosophically appealing but risky (what about dependencies? system packages?). Consider making removal explicit or opt-in.
+
+**Root vs User Context**: Some operations need root (apt install, chattr), others need user context (systemctl --user). Design privilege separation carefully - perhaps separate "system" and "user" phases.
+
+**Multi-Provider Complexity**: apt, cargo, go, npm all have different:
+- Install/update/remove semantics
+- Ways to check if packages exist
+- Version pinning strategies
+- Post-install requirements
+
+Start simple (apt only), design the abstraction carefully before adding more.
+
+**Post-Install Hooks**: Some packages need special setup (pipewire → systemctl, NetworkManager → config edits). Design considerations:
+- Should hooks run every time or only on first install?
+- How to handle failures in hooks vs failures in package install?
+- User-level vs system-level command execution?
+
+### Scope Management
+
+The temptation will be to add more providers, templating, secrets management, etc. Resist until the core is solid. NixOS exists because declarative system management is genuinely hard. Keep settle focused on "developer environment setup" not "full system management."
+
 ## Implementation Notes
 
 ### Current Dotfile Pattern (config.sh approach)
