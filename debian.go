@@ -7,22 +7,30 @@ import (
 )
 
 // DebianManager handles Debian package operations
-type DebianManager struct{}
-
-// NewDebianManager creates a new Debian package manager
-func NewDebianManager() *DebianManager {
-	return &DebianManager{}
+type DebianManager struct {
+	verbose bool
 }
 
-// IsInstalled checks if a package is installed using dpkg
+// NewDebianManager creates a new Debian package manager
+func NewDebianManager(verbose bool) *DebianManager {
+	return &DebianManager{verbose: verbose}
+}
+
+// IsInstalled checks if a package is installed using dpkg-query
+// This also handles virtual/transitional packages correctly
 func (d *DebianManager) IsInstalled(packageName string) (bool, error) {
-	cmd := exec.Command("dpkg", "-s", packageName)
-	err := cmd.Run()
+	// Use dpkg-query with format to check install status
+	// This returns "install ok installed" for installed packages
+	cmd := exec.Command("dpkg-query", "-W", "-f=${Status}", packageName)
+	output, err := cmd.Output()
 	if err != nil {
-		// dpkg returns non-zero if package is not installed
+		// Package not found or error
 		return false, nil
 	}
-	return true, nil
+
+	// Check if status contains "install ok installed"
+	status := string(output)
+	return status == "install ok installed", nil
 }
 
 type packageCheckResult struct {
@@ -88,15 +96,28 @@ func (d *DebianManager) Install(packages []string) error {
 	args := append([]string{"install", "-y"}, packages...)
 	cmd := exec.Command("sudo", append([]string{"apt-get"}, args...)...)
 
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Stdin = os.Stdin
+	if d.verbose {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		fmt.Printf("Installing %d packages...\n", len(packages))
+	} else {
+		fmt.Printf("Installing %d packages... ", len(packages))
+	}
 
+	cmd.Stdin = os.Stdin
 	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 
-	fmt.Printf("Installing %d packages...\n", len(packages))
+	err := cmd.Run()
 
-	return cmd.Run()
+	if !d.verbose {
+		if err != nil {
+			fmt.Println("failed")
+		} else {
+			fmt.Println("done")
+		}
+	}
+
+	return err
 }
 
 // Update runs apt-get update
@@ -111,17 +132,36 @@ func (d *DebianManager) Update() error {
 }
 
 // RunPostInstall executes a post-install script for a package
+// Scripts run as the current user and should include 'sudo' where needed
 func (d *DebianManager) RunPostInstall(packageName, script string) error {
 	if script == "" {
 		return nil
 	}
 
-	fmt.Printf("Running post-install script for %s...\n", packageName)
+	if d.verbose {
+		fmt.Printf("Running post-install script for %s...\n", packageName)
+	} else {
+		fmt.Printf("Running post-install for %s... ", packageName)
+	}
 
 	cmd := exec.Command("bash", "-c", script)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+
+	if d.verbose {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
+
 	cmd.Stdin = os.Stdin
 
-	return cmd.Run()
+	err := cmd.Run()
+
+	if !d.verbose {
+		if err != nil {
+			fmt.Println("failed")
+		} else {
+			fmt.Println("done")
+		}
+	}
+
+	return err
 }

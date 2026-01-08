@@ -32,4 +32,4 @@ go.work.sum
 # .vscode/
 
 .claude
-.config.toml
+config.toml

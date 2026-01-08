@@ -1,13 +1,21 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
 	"runtime"
 )
 
+var verbose bool
+
 func main() {
+	// Parse command line flags
+	flag.BoolVar(&verbose, "v", false, "Enable verbose output")
+	flag.BoolVar(&verbose, "verbose", false, "Enable verbose output")
+	flag.Parse()
+
 	if runtime.GOOS != "linux" {
 		fmt.Fprintf(os.Stderr, "%s is not supported\n", runtime.GOOS)
 		os.Exit(1)
@@ -51,7 +59,7 @@ func main() {
 }
 
 func handleDebian(debianCfg *DebianConfig) error {
-	debian := NewDebianManager()
+	debian := NewDebianManager(verbose)
 
 	// Collect all packages
 	allPackages := make([]string, 0, len(debianCfg.Packages)+len(debianCfg.Package))
@@ -75,6 +83,25 @@ func handleDebian(debianCfg *DebianConfig) error {
 		return fmt.Errorf("error checking packages: %w", err)
 	}
 
+	// Create a set of missing packages for quick lookup
+	missingSet := make(map[string]bool)
+	for _, pkg := range missingPackages {
+		missingSet[pkg] = true
+	}
+
+	// Collect package statuses for printing
+	statuses := make([]PackageStatus, 0, len(allPackages))
+	for _, pkg := range allPackages {
+		status := StatusSkipped
+		if missingSet[pkg] {
+			status = StatusInstalled
+		}
+		statuses = append(statuses, PackageStatus{
+			Name:   pkg,
+			Status: status,
+		})
+	}
+
 	installedCount := len(allPackages) - len(missingPackages)
 	fmt.Printf("Already installed: %d\n", installedCount)
 	fmt.Printf("Need to install: %d\n", len(missingPackages))
@@ -84,18 +111,21 @@ func handleDebian(debianCfg *DebianConfig) error {
 		if err := debian.Install(missingPackages); err != nil {
 			return fmt.Errorf("error installing packages: %w", err)
 		}
+
+		// Run post-install scripts ONLY for packages that were just installed
+		for _, pkg := range debianCfg.Package {
+			if pkg.PostInstall != "" && missingSet[pkg.Name] {
+				if err := debian.RunPostInstall(pkg.Name, pkg.PostInstall); err != nil {
+					return fmt.Errorf("error running post-install for %s: %w", pkg.Name, err)
+				}
+			}
+		}
 	} else {
 		fmt.Println("All Debian packages already installed!")
 	}
 
-	// Run post-install scripts for packages that have them
-	for _, pkg := range debianCfg.Package {
-		if pkg.PostInstall != "" {
-			if err := debian.RunPostInstall(pkg.Name, pkg.PostInstall); err != nil {
-				return fmt.Errorf("error running post-install for %s: %w", pkg.Name, err)
-			}
-		}
-	}
+	// Print results table
+	PrintPackageTable(statuses)
 
 	return nil
 }
