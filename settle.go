@@ -212,7 +212,7 @@ func (s *Settle) listDebian() error {
 func (s *Settle) listDotfiles() error {
 	cfg := s.config.Dotfiles
 
-	if len(cfg.Links) == 0 {
+	if len(cfg.Files) == 0 {
 		return nil
 	}
 
@@ -220,7 +220,7 @@ func (s *Settle) listDotfiles() error {
 
 	fmt.Println("Dotfiles:")
 
-	for _, link := range cfg.Links {
+	for _, link := range cfg.Files {
 		status, err := manager.CheckLink(link)
 		statusStr := "unknown"
 
@@ -238,6 +238,10 @@ func (s *Settle) listDotfiles() error {
 				statusStr = "file exists"
 			case LinkIsDir:
 				statusStr = "dir exists"
+			case CopyCorrect:
+				statusStr = "copied"
+			case CopyOutdated:
+				statusStr = "outdated"
 			}
 		}
 
@@ -252,21 +256,21 @@ func (s *Settle) listDotfiles() error {
 func (s *Settle) applyDotfiles() error {
 	cfg := s.config.Dotfiles
 
-	if len(cfg.Links) == 0 {
+	if len(cfg.Files) == 0 {
 		fmt.Println("No dotfiles configured")
 		return nil
 	}
 
 	manager := NewDotfilesManager(cfg.SourceDir, s.verbose)
 
-	fmt.Printf("\nChecking %d dotfile links...\n", len(cfg.Links))
+	fmt.Printf("\nChecking %d dotfile links...\n", len(cfg.Files))
 
 	linked := 0
 	skipped := 0
 	var errors []string
 
-	for _, link := range cfg.Links {
-		created, err := manager.CreateLink(link, s.dryRun)
+	for _, link := range cfg.Files {
+		created, err := manager.Apply(link, s.dryRun)
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("%s: %v", link.Dest, err))
 			continue

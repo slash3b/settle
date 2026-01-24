@@ -19,14 +19,15 @@ type DebianConfig struct {
 	Package  []Package `toml:"package"`
 }
 
-type DotfileLink struct {
+type Dotfile struct {
 	Src  string `toml:"src"`
 	Dest string `toml:"dest"`
+	Mode string `toml:"mode"` // "link" (default) or "copy"
 }
 
 type DotfilesConfig struct {
-	SourceDir string        `toml:"source_dir"`
-	Links     []DotfileLink `toml:"link"`
+	SourceDir string    `toml:"source_dir"`
+	Files     []Dotfile `toml:"link"`
 }
 
 type Config struct {
