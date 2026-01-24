@@ -19,8 +19,19 @@ type DebianConfig struct {
 	Package  []Package `toml:"package"`
 }
 
+type DotfileLink struct {
+	Src  string `toml:"src"`
+	Dest string `toml:"dest"`
+}
+
+type DotfilesConfig struct {
+	SourceDir string        `toml:"source_dir"`
+	Links     []DotfileLink `toml:"link"`
+}
+
 type Config struct {
-	Debian *DebianConfig `toml:"debian"`
+	Debian   *DebianConfig   `toml:"debian"`
+	Dotfiles *DotfilesConfig `toml:"dotfiles"`
 	// Future managers:
 	// Cargo  *CargoConfig  `toml:"cargo"`
 	// Go     *GoConfig     `toml:"go"`

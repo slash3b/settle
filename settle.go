@@ -37,6 +37,14 @@ func (s *Settle) Apply() error {
 		}
 	}
 
+	// Handle Dotfiles
+	if s.config.Dotfiles != nil {
+		managersFound++
+		if err := s.applyDotfiles(); err != nil {
+			return fmt.Errorf("error handling dotfiles: %w", err)
+		}
+	}
+
 	// Future managers would be handled here:
 	// if s.config.Cargo != nil {
 	//     managersFound++
@@ -46,7 +54,7 @@ func (s *Settle) Apply() error {
 	// }
 
 	if managersFound == 0 {
-		return fmt.Errorf("no package managers configured in config.toml")
+		return fmt.Errorf("no packages or dotfiles configured in config.toml")
 	}
 
 	fmt.Println("Done!")
@@ -136,6 +144,58 @@ func (s *Settle) applyDebian() error {
 
 	// Print results table
 	PrintPackageTable(statuses)
+
+	return nil
+}
+
+// applyDotfiles handles dotfile symlinking
+func (s *Settle) applyDotfiles() error {
+	cfg := s.config.Dotfiles
+
+	if len(cfg.Links) == 0 {
+		fmt.Println("No dotfiles configured")
+		return nil
+	}
+
+	manager := NewDotfilesManager(cfg.SourceDir, s.verbose)
+
+	fmt.Printf("\nChecking %d dotfile links...\n", len(cfg.Links))
+
+	linked := 0
+	skipped := 0
+	var errors []string
+
+	for _, link := range cfg.Links {
+		created, err := manager.CreateLink(link, s.dryRun)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", link.Dest, err))
+			continue
+		}
+
+		if created {
+			linked++
+			if s.dryRun {
+				fmt.Printf("[dry-run] Would link: %s -> %s\n", link.Dest, link.Src)
+			} else if s.verbose {
+				fmt.Printf("Linked: %s -> %s\n", link.Dest, link.Src)
+			}
+		} else {
+			skipped++
+		}
+	}
+
+	if s.dryRun {
+		fmt.Printf("\n[dry-run] Would create %d links, %d already correct\n", linked, skipped)
+	} else {
+		fmt.Printf("Created %d links, %d already correct\n", linked, skipped)
+	}
+
+	if len(errors) > 0 {
+		fmt.Println("\nErrors:")
+		for _, e := range errors {
+			fmt.Printf("  - %s\n", e)
+		}
+	}
 
 	return nil
 }
