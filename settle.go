@@ -148,6 +148,106 @@ func (s *Settle) applyDebian() error {
 	return nil
 }
 
+// List shows the status of all packages and dotfiles
+func (s *Settle) List() error {
+	// List Debian packages
+	if s.config.Debian != nil {
+		if err := s.listDebian(); err != nil {
+			return err
+		}
+	}
+
+	// List Dotfiles
+	if s.config.Dotfiles != nil {
+		if err := s.listDotfiles(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// listDebian lists all Debian packages and their status
+func (s *Settle) listDebian() error {
+	manager := NewDebianManager(s.verbose)
+	cfg := s.config.Debian
+
+	// Collect all packages
+	allPackages := make([]string, 0, len(cfg.Packages)+len(cfg.Package))
+	allPackages = append(allPackages, cfg.Packages...)
+	for _, pkg := range cfg.Package {
+		allPackages = append(allPackages, pkg.Name)
+	}
+
+	if len(allPackages) == 0 {
+		return nil
+	}
+
+	fmt.Println("Packages:")
+
+	// Check which packages are installed
+	missing, err := manager.CheckInstalled(allPackages)
+	if err != nil {
+		return err
+	}
+
+	missingSet := make(map[string]bool)
+	for _, pkg := range missing {
+		missingSet[pkg] = true
+	}
+
+	for _, pkg := range allPackages {
+		status := "installed"
+		if missingSet[pkg] {
+			status = "missing"
+		}
+		fmt.Printf("  %s: %s\n", pkg, status)
+	}
+
+	fmt.Println()
+	return nil
+}
+
+// listDotfiles lists all dotfiles and their status
+func (s *Settle) listDotfiles() error {
+	cfg := s.config.Dotfiles
+
+	if len(cfg.Links) == 0 {
+		return nil
+	}
+
+	manager := NewDotfilesManager(cfg.SourceDir, s.verbose)
+
+	fmt.Println("Dotfiles:")
+
+	for _, link := range cfg.Links {
+		status, err := manager.CheckLink(link)
+		statusStr := "unknown"
+
+		if err != nil {
+			statusStr = fmt.Sprintf("error: %v", err)
+		} else {
+			switch status {
+			case LinkCorrect:
+				statusStr = "linked"
+			case LinkMissing:
+				statusStr = "missing"
+			case LinkIncorrect:
+				statusStr = "wrong target"
+			case LinkIsFile:
+				statusStr = "file exists"
+			case LinkIsDir:
+				statusStr = "dir exists"
+			}
+		}
+
+		fmt.Printf("  %s: %s\n", link.Dest, statusStr)
+	}
+
+	fmt.Println()
+	return nil
+}
+
 // applyDotfiles handles dotfile symlinking
 func (s *Settle) applyDotfiles() error {
 	cfg := s.config.Dotfiles

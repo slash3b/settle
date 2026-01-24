@@ -45,8 +45,26 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Create and run the orchestrator
+	// Create the orchestrator
 	settle := NewSettle(cfg, verbose, dryRun)
+
+	// Handle subcommands
+	args := flag.Args()
+	if len(args) > 0 {
+		switch args[0] {
+		case "list":
+			if err := settle.List(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown command: %s\n", args[0])
+			os.Exit(1)
+		}
+	}
+
+	// Default: run apply
 	if err := settle.Apply(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
