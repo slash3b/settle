@@ -27,7 +27,7 @@ type Dotfile struct {
 
 type DotfilesConfig struct {
 	SourceDir string    `toml:"source_dir"`
-	Files     []Dotfile `toml:"link"`
+	Files     []Dotfile `toml:"file"`
 }
 
 type Config struct {
