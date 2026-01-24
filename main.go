@@ -10,12 +10,19 @@ import (
 	"syscall"
 )
 
-var verbose bool
+var (
+	verbose    bool
+	configPath string
+	dryRun     bool
+)
 
 func main() {
 	// Parse command line flags
 	flag.BoolVar(&verbose, "v", false, "Enable verbose output")
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose output")
+	flag.StringVar(&configPath, "config", defaultConfigPath, "Path to config file")
+	flag.BoolVar(&dryRun, "dry-run", false, "Show what would be done without making changes")
+	flag.BoolVar(&dryRun, "n", false, "Show what would be done without making changes")
 	flag.Parse()
 
 	if runtime.GOOS != "linux" {
@@ -33,15 +40,13 @@ func main() {
 		os.Exit(130) // Standard exit code for SIGINT
 	}()
 
-	// Load config from default location
-	// TODO: Support custom paths via --config flag
-	cfg, err := loadConfig(defaultConfigPath)
+	cfg, err := loadConfig(configPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
 	// Create and run the orchestrator
-	settle := NewSettle(cfg, verbose)
+	settle := NewSettle(cfg, verbose, dryRun)
 	if err := settle.Apply(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

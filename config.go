@@ -27,6 +27,10 @@ type Config struct {
 }
 
 func loadConfig(path string) (*Config, error) {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil, fmt.Errorf("config file not found: %s\n\nCreate a config.toml file or specify a path with --config", path)
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("error reading config file: %w", err)

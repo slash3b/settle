@@ -8,18 +8,25 @@ import (
 type Settle struct {
 	config  *Config
 	verbose bool
+	dryRun  bool
 }
 
 // NewSettle creates a new Settle orchestrator
-func NewSettle(config *Config, verbose bool) *Settle {
+func NewSettle(config *Config, verbose, dryRun bool) *Settle {
 	return &Settle{
 		config:  config,
 		verbose: verbose,
+		dryRun:  dryRun,
 	}
 }
 
 // Apply applies the configuration by installing missing packages across all configured managers
 func (s *Settle) Apply() error {
+	if s.dryRun {
+		fmt.Println("[dry-run mode - no changes will be made]")
+		fmt.Println()
+	}
+
 	managersFound := 0
 
 	// Handle Debian packages
@@ -98,15 +105,28 @@ func (s *Settle) applyDebian() error {
 
 	// Install missing packages
 	if len(missingPackages) > 0 {
-		if err := manager.Install(missingPackages); err != nil {
-			return fmt.Errorf("error installing packages: %w", err)
-		}
+		if s.dryRun {
+			fmt.Println("\n[dry-run] Would install:")
+			for _, pkg := range missingPackages {
+				fmt.Printf("  - %s\n", pkg)
+			}
+			// Show post-install hooks that would run
+			for _, pkg := range debianCfg.Package {
+				if pkg.PostInstall != "" && missingSet[pkg.Name] {
+					fmt.Printf("\n[dry-run] Would run post-install for %s\n", pkg.Name)
+				}
+			}
+		} else {
+			if err := manager.Install(missingPackages); err != nil {
+				return fmt.Errorf("error installing packages: %w", err)
+			}
 
-		// Run post-install scripts ONLY for packages that were just installed
-		for _, pkg := range debianCfg.Package {
-			if pkg.PostInstall != "" && missingSet[pkg.Name] {
-				if err := manager.RunPostInstall(pkg.Name, pkg.PostInstall); err != nil {
-					return fmt.Errorf("error running post-install for %s: %w", pkg.Name, err)
+			// Run post-install scripts ONLY for packages that were just installed
+			for _, pkg := range debianCfg.Package {
+				if pkg.PostInstall != "" && missingSet[pkg.Name] {
+					if err := manager.RunPostInstall(pkg.Name, pkg.PostInstall); err != nil {
+						return fmt.Errorf("error running post-install for %s: %w", pkg.Name, err)
+					}
 				}
 			}
 		}
