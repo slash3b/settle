@@ -2,21 +2,24 @@ package main
 
 import (
 	"fmt"
+	"sort"
 )
 
 // Settle is the main orchestrator for the settle application
 type Settle struct {
-	config  *Config
-	verbose bool
-	dryRun  bool
+	config     *Config
+	configPath string
+	verbose    bool
+	dryRun     bool
 }
 
 // NewSettle creates a new Settle orchestrator
-func NewSettle(config *Config, verbose, dryRun bool) *Settle {
+func NewSettle(config *Config, configPath string, verbose, dryRun bool) *Settle {
 	return &Settle{
-		config:  config,
-		verbose: verbose,
-		dryRun:  dryRun,
+		config:     config,
+		configPath: configPath,
+		verbose:    verbose,
+		dryRun:     dryRun,
 	}
 }
 
@@ -57,7 +60,46 @@ func (s *Settle) Apply() error {
 		return fmt.Errorf("no packages or dotfiles configured in config.toml")
 	}
 
+	// Sync state file (skip in dry-run mode)
+	if !s.dryRun {
+		if err := s.syncState(); err != nil {
+			fmt.Printf("Warning: failed to sync state: %v\n", err)
+		}
+	}
+
 	fmt.Println("Done!")
+	return nil
+}
+
+// syncState updates the state file with current package versions
+func (s *Settle) syncState() error {
+	stateMgr := NewStateManager(s.configPath)
+
+	if err := stateMgr.Load(); err != nil {
+		return err
+	}
+
+	// Collect all packages
+	var allPackages []string
+	if s.config.Debian != nil {
+		allPackages = append(allPackages, s.config.Debian.Packages...)
+		for _, pkg := range s.config.Debian.Package {
+			allPackages = append(allPackages, pkg.Name)
+		}
+	}
+
+	if err := stateMgr.SyncPackageVersions(allPackages); err != nil {
+		return err
+	}
+
+	if err := stateMgr.Save(); err != nil {
+		return err
+	}
+
+	if s.verbose {
+		fmt.Printf("State saved to %s\n", stateMgr.Path())
+	}
+
 	return nil
 }
 
@@ -172,6 +214,15 @@ func (s *Settle) listDebian() error {
 	manager := NewDebianManager(s.verbose)
 	cfg := s.config.Debian
 
+	// Load state file for version comparison
+	stateMgr := NewStateManager(s.configPath)
+	if err := stateMgr.Load(); err != nil {
+		// Continue without state, just won't show upgrade info
+		if s.verbose {
+			fmt.Printf("Warning: could not load state: %v\n", err)
+		}
+	}
+
 	// Collect all packages
 	allPackages := make([]string, 0, len(cfg.Packages)+len(cfg.Package))
 	allPackages = append(allPackages, cfg.Packages...)
@@ -182,6 +233,9 @@ func (s *Settle) listDebian() error {
 	if len(allPackages) == 0 {
 		return nil
 	}
+
+	// Sort alphabetically
+	sort.Strings(allPackages)
 
 	fmt.Println("Packages:")
 
@@ -197,10 +251,35 @@ func (s *Settle) listDebian() error {
 	}
 
 	for _, pkg := range allPackages {
-		status := "installed"
 		if missingSet[pkg] {
-			status = "missing"
+			fmt.Printf("  %s: missing\n", pkg)
+			continue
 		}
+
+		// Get current installed version
+		version, err := GetInstalledVersion(pkg)
+		if err != nil {
+			fmt.Printf("  %s: installed (version unknown)\n", pkg)
+			continue
+		}
+
+		// Check for available upgrade
+		available, _ := GetAvailableVersion(pkg)
+
+		// Build status string
+		var status string
+		if available != "" && available != version {
+			status = fmt.Sprintf("%s (upgrade: %s)", version, available)
+		} else {
+			status = version
+		}
+
+		// Check if upgraded since last state sync
+		stateVersion, hasState := stateMgr.GetPackageVersion(pkg)
+		if hasState && stateVersion != version {
+			status = fmt.Sprintf("%s (was %s)", status, stateVersion)
+		}
+
 		fmt.Printf("  %s: %s\n", pkg, status)
 	}
 

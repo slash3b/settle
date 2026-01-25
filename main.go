@@ -46,7 +46,7 @@ func main() {
 	}
 
 	// Create the orchestrator
-	settle := NewSettle(cfg, verbose, dryRun)
+	settle := NewSettle(cfg, configPath, verbose, dryRun)
 
 	// Handle subcommands
 	args := flag.Args()

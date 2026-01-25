@@ -1,0 +1,147 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+)
+
+const stateFileName = ".settle.json"
+
+// PackageState tracks the installed version of a package
+type PackageState struct {
+	Version     string    `json:"version"`
+	InstalledAt time.Time `json:"installed_at"`
+}
+
+// State represents the settle state file
+type State struct {
+	Packages  map[string]PackageState `json:"packages"`
+	UpdatedAt time.Time               `json:"updated_at"`
+}
+
+// StateManager handles reading and writing state
+type StateManager struct {
+	path  string
+	state *State
+}
+
+// NewStateManager creates a new state manager
+func NewStateManager(configPath string) *StateManager {
+	// State file lives next to config file
+	dir := filepath.Dir(configPath)
+	statePath := filepath.Join(dir, stateFileName)
+
+	return &StateManager{
+		path: statePath,
+		state: &State{
+			Packages: make(map[string]PackageState),
+		},
+	}
+}
+
+// Load reads the state file if it exists
+func (s *StateManager) Load() error {
+	data, err := os.ReadFile(s.path)
+	if os.IsNotExist(err) {
+		// No state file yet, start fresh
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to read state file: %w", err)
+	}
+
+	if err := json.Unmarshal(data, s.state); err != nil {
+		return fmt.Errorf("failed to parse state file: %w", err)
+	}
+
+	return nil
+}
+
+// Save writes the state file
+func (s *StateManager) Save() error {
+	s.state.UpdatedAt = time.Now()
+
+	data, err := json.MarshalIndent(s.state, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal state: %w", err)
+	}
+
+	if err := os.WriteFile(s.path, data, 0644); err != nil {
+		return fmt.Errorf("failed to write state file: %w", err)
+	}
+
+	return nil
+}
+
+// GetPackageVersion returns the stored version for a package
+func (s *StateManager) GetPackageVersion(name string) (string, bool) {
+	pkg, ok := s.state.Packages[name]
+	if !ok {
+		return "", false
+	}
+	return pkg.Version, true
+}
+
+// SetPackageVersion updates the version for a package
+func (s *StateManager) SetPackageVersion(name, version string) {
+	s.state.Packages[name] = PackageState{
+		Version:     version,
+		InstalledAt: time.Now(),
+	}
+}
+
+// GetInstalledVersion queries dpkg for the installed version of a package
+func GetInstalledVersion(name string) (string, error) {
+	cmd := exec.Command("dpkg-query", "-W", "-f=${Version}", name)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// GetAvailableVersion queries apt-cache for the candidate version of a package
+func GetAvailableVersion(name string) (string, error) {
+	cmd := exec.Command("apt-cache", "policy", name)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+
+	// Parse output to find "Candidate:" line
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Candidate:") {
+			version := strings.TrimSpace(strings.TrimPrefix(line, "Candidate:"))
+			if version == "(none)" {
+				return "", fmt.Errorf("no candidate version")
+			}
+			return version, nil
+		}
+	}
+	return "", fmt.Errorf("candidate version not found")
+}
+
+// SyncPackageVersions updates state with current installed versions
+func (s *StateManager) SyncPackageVersions(packages []string) error {
+	for _, pkg := range packages {
+		version, err := GetInstalledVersion(pkg)
+		if err != nil {
+			// Package not installed, skip
+			continue
+		}
+		s.SetPackageVersion(pkg, version)
+	}
+	return nil
+}
+
+// Path returns the state file path
+func (s *StateManager) Path() string {
+	return s.path
+}
