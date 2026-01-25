@@ -153,36 +153,39 @@ func (s *Settle) applyLinux() error {
 		missingSet[pkg] = true
 	}
 
-	// Collect package statuses for printing
-	statuses := make([]PackageStatus, 0, len(allPackages))
-	for _, pkg := range allPackages {
-		status := StatusSkipped
-		if missingSet[pkg] {
-			status = StatusInstalled
-		}
-		statuses = append(statuses, PackageStatus{
-			Name:   pkg,
-			Status: status,
-		})
-	}
-
 	installedCount := len(allPackages) - len(missingPackages)
 	fmt.Printf("Already installed: %d\n", installedCount)
 	fmt.Printf("Need to install: %d\n", len(missingPackages))
 
-	// Build versions map from lockfile
+	// Filter out unknown packages and build versions map
+	var installable []string
+	var unknown []string
 	versions := make(map[string]string)
+
 	for _, pkg := range missingPackages {
+		if _, err := GetAvailableVersion(pkg); err != nil {
+			unknown = append(unknown, pkg)
+			continue
+		}
+		installable = append(installable, pkg)
 		if version, ok := lockfile.GetPackageVersion(pkg); ok {
 			versions[pkg] = version
 		}
 	}
 
+	// Warn about unknown packages
+	if len(unknown) > 0 {
+		fmt.Printf("\nSkipping %d unknown packages:\n", len(unknown))
+		for _, pkg := range unknown {
+			fmt.Printf("  - %s\n", pkg)
+		}
+	}
+
 	// Install missing packages
-	if len(missingPackages) > 0 {
+	if len(installable) > 0 {
 		if s.dryRun {
 			fmt.Println("\n[dry-run] Would install:")
-			for _, pkg := range missingPackages {
+			for _, pkg := range installable {
 				if version, ok := versions[pkg]; ok {
 					fmt.Printf("  - %s=%s (pinned)\n", pkg, version)
 				} else {
@@ -196,7 +199,7 @@ func (s *Settle) applyLinux() error {
 				}
 			}
 		} else {
-			if err := manager.Install(missingPackages, versions); err != nil {
+			if err := manager.Install(installable, versions); err != nil {
 				return fmt.Errorf("error installing packages: %w", err)
 			}
 
@@ -208,12 +211,41 @@ func (s *Settle) applyLinux() error {
 					}
 				}
 			}
+
+			// Update lockfile with newly installed packages
+			for _, pkg := range installable {
+				version, err := GetInstalledVersion(pkg)
+				if err == nil {
+					lockfile.SetPackageVersion(pkg, version)
+				}
+			}
+			if err := lockfile.Save(); err != nil {
+				fmt.Printf("Warning: failed to update lockfile: %v\n", err)
+			}
 		}
-	} else {
-		fmt.Println("All Debian packages already installed!")
+	} else if len(missingPackages) == 0 {
+		fmt.Println("All packages already installed!")
 	}
 
-	// Print results table
+	// Print results table (only show installable packages, not unknown)
+	statuses := make([]PackageStatus, 0, len(allPackages))
+	unknownSet := make(map[string]bool)
+	for _, pkg := range unknown {
+		unknownSet[pkg] = true
+	}
+	for _, pkg := range allPackages {
+		if unknownSet[pkg] {
+			continue // skip unknown packages in table
+		}
+		status := StatusSkipped
+		if missingSet[pkg] && !unknownSet[pkg] {
+			status = StatusInstalled
+		}
+		statuses = append(statuses, PackageStatus{
+			Name:   pkg,
+			Status: status,
+		})
+	}
 	PrintPackageTable(statuses)
 
 	// Check for packages to remove (in lockfile but not in config)

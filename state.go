@@ -64,7 +64,7 @@ func (s *StateManager) Load() error {
 
 // Save writes the state file
 func (s *StateManager) Save() error {
-	s.state.UpdatedAt = time.Now()
+	s.state.UpdatedAt = time.Now().Truncate(time.Second)
 
 	data, err := json.MarshalIndent(s.state, "", "  ")
 	if err != nil {
@@ -88,10 +88,18 @@ func (s *StateManager) GetPackageVersion(name string) (string, bool) {
 }
 
 // SetPackageVersion updates the version for a package
+// Preserves existing InstalledAt if package already exists
 func (s *StateManager) SetPackageVersion(name, version string) {
-	s.state.Packages[name] = PackageState{
-		Version:     version,
-		InstalledAt: time.Now(),
+	if existing, ok := s.state.Packages[name]; ok {
+		// Package exists - preserve install time, only update version
+		existing.Version = version
+		s.state.Packages[name] = existing
+	} else {
+		// New package - set install time
+		s.state.Packages[name] = PackageState{
+			Version:     version,
+			InstalledAt: time.Now().Truncate(time.Second),
+		}
 	}
 }
 
