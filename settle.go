@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"sort"
+
+	"github.com/fatih/color"
 )
 
 // Settle is the main orchestrator for the settle application
@@ -359,42 +361,50 @@ func (s *Settle) listLinux() error {
 	// Sort and print
 	sort.Strings(allPackages)
 
-	fmt.Println("Packages:")
+	red := color.New(color.FgRed)
+	yellow := color.New(color.FgYellow)
+
+	var items []ListItem
 	for _, pkg := range allPackages {
 		info := infoMap[pkg]
+		var item ListItem
+		item.Name = pkg
 
 		if info.isMissing {
 			if info.notFound {
-				fmt.Printf("  %s: unknown\n", pkg)
+				item.Status = "unknown"
+				item.Color = red
 			} else {
-				fmt.Printf("  %s: missing\n", pkg)
+				item.Status = "missing"
 			}
+			items = append(items, item)
 			continue
 		}
 
 		if info.installed == "" {
-			fmt.Printf("  %s: installed (version unknown)\n", pkg)
+			item.Status = "installed (version unknown)"
+			items = append(items, item)
 			continue
 		}
 
 		// Build status string
-		var status string
 		if info.available != "" && info.available != info.installed {
-			status = fmt.Sprintf("%s (upgrade: %s)", info.installed, info.available)
+			item.Status = fmt.Sprintf("%s (upgrade: %s)", info.installed, info.available)
+			item.Color = yellow
 		} else {
-			status = info.installed
+			item.Status = info.installed
 		}
 
 		// Check if upgraded since last state sync
 		stateVersion, hasState := stateMgr.GetPackageVersion(pkg)
 		if hasState && stateVersion != info.installed {
-			status = fmt.Sprintf("%s (was %s)", status, stateVersion)
+			item.Status = fmt.Sprintf("%s (was %s)", item.Status, stateVersion)
 		}
 
-		fmt.Printf("  %s: %s\n", pkg, status)
+		items = append(items, item)
 	}
 
-	fmt.Println()
+	PrintListTable("Packages", items)
 	return nil
 }
 
@@ -407,38 +417,48 @@ func (s *Settle) listDotfiles() error {
 	}
 
 	manager := NewDotfilesManager(cfg.SourceDir, s.verbose)
+	red := color.New(color.FgRed)
+	yellow := color.New(color.FgYellow)
+	green := color.New(color.FgGreen)
 
-	fmt.Println("Dotfiles:")
-
+	var items []ListItem
 	for _, link := range cfg.Files {
 		status, err := manager.CheckLink(link)
-		statusStr := "unknown"
+		var item ListItem
+		item.Name = link.Dest
 
 		if err != nil {
-			statusStr = fmt.Sprintf("error: %v", err)
+			item.Status = fmt.Sprintf("error: %v", err)
+			item.Color = red
 		} else {
 			switch status {
 			case LinkCorrect:
-				statusStr = "linked"
+				item.Status = "linked"
+				item.Color = green
 			case LinkMissing:
-				statusStr = "missing"
+				item.Status = "missing"
+				item.Color = red
 			case LinkIncorrect:
-				statusStr = "wrong target"
+				item.Status = "wrong target"
+				item.Color = yellow
 			case LinkIsFile:
-				statusStr = "file exists"
+				item.Status = "file exists"
+				item.Color = yellow
 			case LinkIsDir:
-				statusStr = "dir exists"
+				item.Status = "dir exists"
+				item.Color = yellow
 			case CopyCorrect:
-				statusStr = "copied"
+				item.Status = "copied"
+				item.Color = green
 			case CopyOutdated:
-				statusStr = "outdated"
+				item.Status = "outdated"
+				item.Color = yellow
 			}
 		}
-
-		fmt.Printf("  %s: %s\n", link.Dest, statusStr)
+		items = append(items, item)
 	}
 
-	fmt.Println()
+	PrintListTable("Dotfiles", items)
 	return nil
 }
 

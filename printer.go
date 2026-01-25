@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"strings"
+
+	"github.com/fatih/color"
 )
 
 const (
@@ -67,4 +69,47 @@ func PrintPackageTable(packages []PackageStatus) {
 	}
 
 	fmt.Println()
+}
+
+// ListItem represents an item in the list table
+type ListItem struct {
+	Name   string
+	Status string
+	Color  *color.Color // nil for default color
+}
+
+// PrintListTable prints a formatted table for list command
+func PrintListTable(title string, items []ListItem) {
+	if len(items) == 0 {
+		return
+	}
+
+	// Find max widths
+	maxNameLen := len("Name")
+	maxStatusLen := len("Status")
+	for _, item := range items {
+		if len(item.Name) > maxNameLen {
+			maxNameLen = len(item.Name)
+		}
+		if len(item.Status) > maxStatusLen {
+			maxStatusLen = len(item.Status)
+		}
+	}
+
+	nameWidth := maxNameLen + 2
+	statusWidth := maxStatusLen + 2
+
+	// Print title
+	fmt.Printf("\n%s:\n", title)
+	fmt.Printf("%-*s | %s\n", nameWidth, "Name", "Status")
+	fmt.Printf("%s-+-%s\n", strings.Repeat("-", nameWidth), strings.Repeat("-", statusWidth))
+
+	// Print rows
+	for _, item := range items {
+		if item.Color != nil {
+			fmt.Printf("%-*s | %s\n", nameWidth, item.Name, item.Color.Sprint(item.Status))
+		} else {
+			fmt.Printf("%-*s | %s\n", nameWidth, item.Name, item.Status)
+		}
+	}
 }
