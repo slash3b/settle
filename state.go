@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const stateFileName = ".settle.json"
+const stateFileName = "lockfile.json"
 
 // PackageState tracks the installed version of a package
 type PackageState struct {
@@ -128,20 +128,72 @@ func GetAvailableVersion(name string) (string, error) {
 	return "", fmt.Errorf("candidate version not found")
 }
 
-// SyncPackageVersions updates state with current installed versions
+type versionResult struct {
+	name    string
+	version string
+}
+
+// SyncPackageVersions updates state with current installed versions (concurrent)
 func (s *StateManager) SyncPackageVersions(packages []string) error {
-	for _, pkg := range packages {
-		version, err := GetInstalledVersion(pkg)
-		if err != nil {
-			// Package not installed, skip
-			continue
-		}
-		s.SetPackageVersion(pkg, version)
+	if len(packages) == 0 {
+		return nil
 	}
+
+	const maxWorkers = 20
+	workers := maxWorkers
+	if len(packages) < workers {
+		workers = len(packages)
+	}
+
+	jobs := make(chan string, len(packages))
+	results := make(chan versionResult, len(packages))
+
+	// Start workers
+	for i := 0; i < workers; i++ {
+		go func() {
+			for pkg := range jobs {
+				version, err := GetInstalledVersion(pkg)
+				if err != nil {
+					results <- versionResult{name: pkg, version: ""}
+				} else {
+					results <- versionResult{name: pkg, version: version}
+				}
+			}
+		}()
+	}
+
+	// Send jobs
+	for _, pkg := range packages {
+		jobs <- pkg
+	}
+	close(jobs)
+
+	// Collect results
+	for i := 0; i < len(packages); i++ {
+		result := <-results
+		if result.version != "" {
+			s.SetPackageVersion(result.name, result.version)
+		}
+	}
+
 	return nil
 }
 
 // Path returns the state file path
 func (s *StateManager) Path() string {
 	return s.path
+}
+
+// GetAllPackages returns all package names in the state
+func (s *StateManager) GetAllPackages() []string {
+	packages := make([]string, 0, len(s.state.Packages))
+	for name := range s.state.Packages {
+		packages = append(packages, name)
+	}
+	return packages
+}
+
+// RemovePackage removes a package from the state
+func (s *StateManager) RemovePackage(name string) {
+	delete(s.state.Packages, name)
 }

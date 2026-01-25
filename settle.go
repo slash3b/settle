@@ -32,11 +32,11 @@ func (s *Settle) Apply() error {
 
 	managersFound := 0
 
-	// Handle Debian packages
-	if s.config.Debian != nil {
+	// Handle Linux packages
+	if s.config.Linux != nil {
 		managersFound++
-		if err := s.applyDebian(); err != nil {
-			return fmt.Errorf("error handling Debian packages: %w", err)
+		if err := s.applyLinux(); err != nil {
+			return fmt.Errorf("error handling Linux packages: %w", err)
 		}
 	}
 
@@ -81,9 +81,9 @@ func (s *Settle) syncState() error {
 
 	// Collect all packages
 	var allPackages []string
-	if s.config.Debian != nil {
-		allPackages = append(allPackages, s.config.Debian.Packages...)
-		for _, pkg := range s.config.Debian.Package {
+	if s.config.Linux != nil {
+		allPackages = append(allPackages, s.config.Linux.Packages...)
+		for _, pkg := range s.config.Linux.Package {
 			allPackages = append(allPackages, pkg.Name)
 		}
 	}
@@ -103,17 +103,32 @@ func (s *Settle) syncState() error {
 	return nil
 }
 
-// applyDebian handles Debian package installation
-func (s *Settle) applyDebian() error {
+// applyLinux handles Linux package installation
+func (s *Settle) applyLinux() error {
+	distro := DetectDistro()
+	if !distro.IsDebianBased() {
+		return fmt.Errorf("unsupported distribution: %s (only Debian-based distros are supported)", distro)
+	}
+
+	if s.verbose {
+		fmt.Printf("Detected distribution: %s\n", distro)
+	}
+
 	manager := NewDebianManager(s.verbose)
-	debianCfg := s.config.Debian
+	linuxCfg := s.config.Linux
+
+	// Load lockfile for version pinning
+	lockfile := NewStateManager(s.configPath)
+	if err := lockfile.Load(); err != nil && s.verbose {
+		fmt.Printf("Note: no lockfile found, will install latest versions\n")
+	}
 
 	// Collect all packages
-	allPackages := make([]string, 0, len(debianCfg.Packages)+len(debianCfg.Package))
-	allPackages = append(allPackages, debianCfg.Packages...)
+	allPackages := make([]string, 0, len(linuxCfg.Packages)+len(linuxCfg.Package))
+	allPackages = append(allPackages, linuxCfg.Packages...)
 
 	// Add packages with post-install hooks
-	for _, pkg := range debianCfg.Package {
+	for _, pkg := range linuxCfg.Package {
 		allPackages = append(allPackages, pkg.Name)
 	}
 
@@ -153,26 +168,38 @@ func (s *Settle) applyDebian() error {
 	fmt.Printf("Already installed: %d\n", installedCount)
 	fmt.Printf("Need to install: %d\n", len(missingPackages))
 
+	// Build versions map from lockfile
+	versions := make(map[string]string)
+	for _, pkg := range missingPackages {
+		if version, ok := lockfile.GetPackageVersion(pkg); ok {
+			versions[pkg] = version
+		}
+	}
+
 	// Install missing packages
 	if len(missingPackages) > 0 {
 		if s.dryRun {
 			fmt.Println("\n[dry-run] Would install:")
 			for _, pkg := range missingPackages {
-				fmt.Printf("  - %s\n", pkg)
+				if version, ok := versions[pkg]; ok {
+					fmt.Printf("  - %s=%s (pinned)\n", pkg, version)
+				} else {
+					fmt.Printf("  - %s (latest)\n", pkg)
+				}
 			}
 			// Show post-install hooks that would run
-			for _, pkg := range debianCfg.Package {
+			for _, pkg := range linuxCfg.Package {
 				if pkg.PostInstall != "" && missingSet[pkg.Name] {
 					fmt.Printf("\n[dry-run] Would run post-install for %s\n", pkg.Name)
 				}
 			}
 		} else {
-			if err := manager.Install(missingPackages); err != nil {
+			if err := manager.Install(missingPackages, versions); err != nil {
 				return fmt.Errorf("error installing packages: %w", err)
 			}
 
 			// Run post-install scripts ONLY for packages that were just installed
-			for _, pkg := range debianCfg.Package {
+			for _, pkg := range linuxCfg.Package {
 				if pkg.PostInstall != "" && missingSet[pkg.Name] {
 					if err := manager.RunPostInstall(pkg.Name, pkg.PostInstall); err != nil {
 						return fmt.Errorf("error running post-install for %s: %w", pkg.Name, err)
@@ -187,14 +214,48 @@ func (s *Settle) applyDebian() error {
 	// Print results table
 	PrintPackageTable(statuses)
 
+	// Check for packages to remove (in lockfile but not in config)
+	configSet := make(map[string]bool)
+	for _, pkg := range allPackages {
+		configSet[pkg] = true
+	}
+
+	var toRemove []string
+	for _, pkg := range lockfile.GetAllPackages() {
+		if !configSet[pkg] {
+			toRemove = append(toRemove, pkg)
+		}
+	}
+
+	if len(toRemove) > 0 {
+		if s.dryRun {
+			fmt.Println("\n[dry-run] Would remove (not in config):")
+			for _, pkg := range toRemove {
+				fmt.Printf("  - %s\n", pkg)
+			}
+		} else {
+			fmt.Printf("\nRemoving %d packages not in config...\n", len(toRemove))
+			if err := manager.Remove(toRemove); err != nil {
+				return fmt.Errorf("error removing packages: %w", err)
+			}
+			// Remove from lockfile
+			for _, pkg := range toRemove {
+				lockfile.RemovePackage(pkg)
+			}
+			if err := lockfile.Save(); err != nil {
+				fmt.Printf("Warning: failed to update lockfile: %v\n", err)
+			}
+		}
+	}
+
 	return nil
 }
 
 // List shows the status of all packages and dotfiles
 func (s *Settle) List() error {
-	// List Debian packages
-	if s.config.Debian != nil {
-		if err := s.listDebian(); err != nil {
+	// List Linux packages
+	if s.config.Linux != nil {
+		if err := s.listLinux(); err != nil {
 			return err
 		}
 	}
@@ -209,15 +270,23 @@ func (s *Settle) List() error {
 	return nil
 }
 
-// listDebian lists all Debian packages and their status
-func (s *Settle) listDebian() error {
+// packageInfo holds version information for a package
+type packageInfo struct {
+	name         string
+	installed    string
+	available    string
+	isMissing    bool
+	notFound     bool
+}
+
+// listLinux lists all Linux packages and their status
+func (s *Settle) listLinux() error {
 	manager := NewDebianManager(s.verbose)
-	cfg := s.config.Debian
+	cfg := s.config.Linux
 
 	// Load state file for version comparison
 	stateMgr := NewStateManager(s.configPath)
 	if err := stateMgr.Load(); err != nil {
-		// Continue without state, just won't show upgrade info
 		if s.verbose {
 			fmt.Printf("Warning: could not load state: %v\n", err)
 		}
@@ -234,12 +303,7 @@ func (s *Settle) listDebian() error {
 		return nil
 	}
 
-	// Sort alphabetically
-	sort.Strings(allPackages)
-
-	fmt.Println("Packages:")
-
-	// Check which packages are installed
+	// Check which packages are installed (already concurrent)
 	missing, err := manager.CheckInstalled(allPackages)
 	if err != nil {
 		return err
@@ -250,33 +314,80 @@ func (s *Settle) listDebian() error {
 		missingSet[pkg] = true
 	}
 
+	// Fetch version info concurrently
+	const maxWorkers = 20
+	workers := maxWorkers
+	if len(allPackages) < workers {
+		workers = len(allPackages)
+	}
+
+	jobs := make(chan string, len(allPackages))
+	results := make(chan packageInfo, len(allPackages))
+
+	// Start workers
+	for i := 0; i < workers; i++ {
+		go func() {
+			for pkg := range jobs {
+				info := packageInfo{name: pkg, isMissing: missingSet[pkg]}
+
+				if info.isMissing {
+					_, err := GetAvailableVersion(pkg)
+					info.notFound = (err != nil)
+				} else {
+					info.installed, _ = GetInstalledVersion(pkg)
+					info.available, _ = GetAvailableVersion(pkg)
+				}
+
+				results <- info
+			}
+		}()
+	}
+
+	// Send jobs
 	for _, pkg := range allPackages {
-		if missingSet[pkg] {
-			fmt.Printf("  %s: missing\n", pkg)
+		jobs <- pkg
+	}
+	close(jobs)
+
+	// Collect results into a map
+	infoMap := make(map[string]packageInfo)
+	for i := 0; i < len(allPackages); i++ {
+		info := <-results
+		infoMap[info.name] = info
+	}
+
+	// Sort and print
+	sort.Strings(allPackages)
+
+	fmt.Println("Packages:")
+	for _, pkg := range allPackages {
+		info := infoMap[pkg]
+
+		if info.isMissing {
+			if info.notFound {
+				fmt.Printf("  %s: unknown\n", pkg)
+			} else {
+				fmt.Printf("  %s: missing\n", pkg)
+			}
 			continue
 		}
 
-		// Get current installed version
-		version, err := GetInstalledVersion(pkg)
-		if err != nil {
+		if info.installed == "" {
 			fmt.Printf("  %s: installed (version unknown)\n", pkg)
 			continue
 		}
 
-		// Check for available upgrade
-		available, _ := GetAvailableVersion(pkg)
-
 		// Build status string
 		var status string
-		if available != "" && available != version {
-			status = fmt.Sprintf("%s (upgrade: %s)", version, available)
+		if info.available != "" && info.available != info.installed {
+			status = fmt.Sprintf("%s (upgrade: %s)", info.installed, info.available)
 		} else {
-			status = version
+			status = info.installed
 		}
 
 		// Check if upgraded since last state sync
 		stateVersion, hasState := stateMgr.GetPackageVersion(pkg)
-		if hasState && stateVersion != version {
+		if hasState && stateVersion != info.installed {
 			status = fmt.Sprintf("%s (was %s)", status, stateVersion)
 		}
 

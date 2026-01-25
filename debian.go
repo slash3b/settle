@@ -88,12 +88,23 @@ func (d *DebianManager) CheckInstalled(packages []string) ([]string, error) {
 }
 
 // Install installs a list of packages using apt-get
-func (d *DebianManager) Install(packages []string) error {
+// If versions map is provided, installs specific versions (package=version)
+func (d *DebianManager) Install(packages []string, versions map[string]string) error {
 	if len(packages) == 0 {
 		return nil
 	}
 
-	args := append([]string{"install", "-y"}, packages...)
+	// Build package specs with versions where available
+	packageSpecs := make([]string, 0, len(packages))
+	for _, pkg := range packages {
+		if version, ok := versions[pkg]; ok && version != "" {
+			packageSpecs = append(packageSpecs, fmt.Sprintf("%s=%s", pkg, version))
+		} else {
+			packageSpecs = append(packageSpecs, pkg)
+		}
+	}
+
+	args := append([]string{"install", "-y"}, packageSpecs...)
 	cmd := exec.Command("sudo", append([]string{"apt-get"}, args...)...)
 
 	if d.verbose {
@@ -129,6 +140,39 @@ func (d *DebianManager) Update() error {
 
 	fmt.Println("Updating package lists...")
 	return cmd.Run()
+}
+
+// Remove removes a list of packages using apt-get
+func (d *DebianManager) Remove(packages []string) error {
+	if len(packages) == 0 {
+		return nil
+	}
+
+	args := append([]string{"remove", "-y"}, packages...)
+	cmd := exec.Command("sudo", append([]string{"apt-get"}, args...)...)
+
+	if d.verbose {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		fmt.Printf("Removing %d packages...\n", len(packages))
+	} else {
+		fmt.Printf("Removing %d packages... ", len(packages))
+	}
+
+	cmd.Stdin = os.Stdin
+	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+
+	err := cmd.Run()
+
+	if !d.verbose {
+		if err != nil {
+			fmt.Println("failed")
+		} else {
+			fmt.Println("done")
+		}
+	}
+
+	return err
 }
 
 // RunPostInstall executes a post-install script for a package

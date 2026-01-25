@@ -14,7 +14,7 @@ type Package struct {
 	PostInstall string `toml:"post_install"`
 }
 
-type DebianConfig struct {
+type LinuxConfig struct {
 	Packages []string  `toml:"packages"`
 	Package  []Package `toml:"package"`
 }
@@ -31,7 +31,7 @@ type DotfilesConfig struct {
 }
 
 type Config struct {
-	Debian   *DebianConfig   `toml:"debian"`
+	Linux    *LinuxConfig    `toml:"linux"`
 	Dotfiles *DotfilesConfig `toml:"dotfiles"`
 	// Future managers:
 	// Cargo  *CargoConfig  `toml:"cargo"`
