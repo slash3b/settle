@@ -35,13 +35,13 @@ func NewDotfilesManager(sourceDir string, verbose bool) *DotfilesManager {
 type LinkStatus int
 
 const (
-	LinkMissing    LinkStatus = iota // Destination doesn't exist
-	LinkCorrect                      // Symlink exists and points to correct target
-	LinkIncorrect                    // Symlink exists but points elsewhere
-	LinkIsFile                       // A regular file exists at destination (for link mode)
-	LinkIsDir                        // A directory exists at destination
-	CopyCorrect                      // Copy exists and matches source
-	CopyOutdated                     // Copy exists but differs from source
+	LinkMissing   LinkStatus = iota // Destination doesn't exist
+	LinkCorrect                     // Symlink exists and points to correct target
+	LinkIncorrect                   // Symlink exists but points elsewhere
+	LinkIsFile                      // A regular file exists at destination (for link mode)
+	LinkIsDir                       // A directory exists at destination
+	CopyCorrect                     // Copy exists and matches source
+	CopyOutdated                    // Copy exists but differs from source
 )
 
 // CheckLink checks the status of a single dotfile (symlink or copy)
@@ -133,7 +133,7 @@ func (d *DotfilesManager) applyLink(src, dest string, status LinkStatus, dryRun 
 		if dryRun {
 			return true, nil
 		}
-		if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 			return false, fmt.Errorf("failed to create directory: %w", err)
 		}
 		if err := os.Symlink(src, dest); err != nil {
@@ -186,7 +186,7 @@ func (d *DotfilesManager) applyCopy(src, dest string, status LinkStatus, dryRun 
 		if dryRun {
 			return true, nil
 		}
-		if err := os.MkdirAll(filepath.Dir(dest), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 			return false, fmt.Errorf("failed to create directory: %w", err)
 		}
 		if err := copyFile(src, dest); err != nil {
