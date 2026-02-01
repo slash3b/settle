@@ -10,11 +10,24 @@ import (
 	"syscall"
 )
 
+// Version is set via ldflags at build time
+var Version = "development"
+
 var (
-	verbose    bool
-	configPath string
-	dryRun     bool
+	verbose     bool
+	configPath  string
+	dryRun      bool
+	showVersion bool
 )
+
+func printVersion() {
+	exe, err := os.Executable()
+	if err != nil {
+		exe = "unknown"
+	}
+	fmt.Printf("settle %s\n", Version)
+	fmt.Printf("binary: %s\n", exe)
+}
 
 func main() {
 	// Parse command line flags
@@ -23,7 +36,20 @@ func main() {
 	flag.StringVar(&configPath, "config", defaultConfigPath, "Path to config file")
 	flag.BoolVar(&dryRun, "dry-run", false, "Show what would be done without making changes")
 	flag.BoolVar(&dryRun, "n", false, "Show what would be done without making changes")
+	flag.BoolVar(&showVersion, "version", false, "Show version information")
 	flag.Parse()
+
+	// Handle --version flag early
+	if showVersion {
+		printVersion()
+		return
+	}
+
+	// Handle version subcommand early (before config loading)
+	if len(flag.Args()) > 0 && flag.Args()[0] == "version" {
+		printVersion()
+		return
+	}
 
 	if runtime.GOOS != "linux" {
 		fmt.Fprintf(os.Stderr, "%s is not supported\n", runtime.GOOS)
