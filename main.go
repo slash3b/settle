@@ -58,6 +58,16 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "install":
+			if len(args) < 2 {
+				fmt.Fprintf(os.Stderr, "Usage: settle install <package> [package...]\n")
+				os.Exit(1)
+			}
+			if err := settle.Install(args[1:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		default:
 			fmt.Fprintf(os.Stderr, "Unknown command: %s\n", args[0])
 			os.Exit(1)

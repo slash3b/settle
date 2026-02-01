@@ -56,3 +56,16 @@ func loadConfig(path string) (*Config, error) {
 
 	return &cfg, nil
 }
+
+func saveConfig(path string, cfg *Config) error {
+	data, err := toml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("error marshaling config: %w", err)
+	}
+
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("error writing config file: %w", err)
+	}
+
+	return nil
+}

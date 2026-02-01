@@ -73,6 +73,125 @@ func (s *Settle) Apply() error {
 	return nil
 }
 
+// Install adds packages to config.toml and installs them
+func (s *Settle) Install(packages []string) error {
+	if len(packages) == 0 {
+		return fmt.Errorf("no packages specified")
+	}
+
+	// Check which packages are already in config
+	inConfig := make(map[string]bool)
+	if s.config.Linux != nil {
+		for _, pkg := range s.config.Linux.Packages {
+			inConfig[pkg] = true
+		}
+		for _, pkg := range s.config.Linux.Package {
+			inConfig[pkg.Name] = true
+		}
+	}
+
+	// Check which packages are already installed on system
+	distro := DetectDistro()
+	if !distro.IsDebianBased() {
+		return fmt.Errorf("unsupported distribution: %s", distro)
+	}
+	manager := NewDebianManager(s.verbose)
+
+	notInstalled, err := manager.CheckInstalled(packages)
+	if err != nil {
+		return fmt.Errorf("error checking packages: %w", err)
+	}
+	notInstalledSet := make(map[string]bool)
+	for _, pkg := range notInstalled {
+		notInstalledSet[pkg] = true
+	}
+
+	// Check if all packages are already in config AND installed
+	allDone := true
+	for _, pkg := range packages {
+		if !inConfig[pkg] || notInstalledSet[pkg] {
+			allDone = false
+			break
+		}
+	}
+	if allDone {
+		fmt.Println("All packages already in config and installed")
+		return nil
+	}
+
+	// Ensure linux section exists
+	if s.config.Linux == nil {
+		s.config.Linux = &LinuxConfig{
+			Packages: []string{},
+		}
+	}
+
+	// Filter to packages not yet in config
+	var toAdd []string
+	for _, pkg := range packages {
+		if inConfig[pkg] {
+			if s.verbose {
+				fmt.Printf("Package %s already in config\n", pkg)
+			}
+		} else {
+			toAdd = append(toAdd, pkg)
+		}
+	}
+
+	// Add to config (only packages not already there)
+	if len(toAdd) > 0 {
+		s.config.Linux.Packages = append(s.config.Linux.Packages, toAdd...)
+
+		if s.dryRun {
+			fmt.Printf("[dry-run] Would add to config.toml: %v\n", toAdd)
+		} else {
+			if err := saveConfig(s.configPath, s.config); err != nil {
+				return fmt.Errorf("failed to save config: %w", err)
+			}
+			fmt.Printf("Added to config.toml: %v\n", toAdd)
+		}
+	}
+
+	// Filter to packages not installed on system
+	var toInstall []string
+	for _, pkg := range packages {
+		if notInstalledSet[pkg] {
+			toInstall = append(toInstall, pkg)
+		}
+	}
+
+	if len(toInstall) == 0 {
+		fmt.Println("All packages already installed on system")
+		return nil
+	}
+
+	// Install missing packages
+	if s.dryRun {
+		fmt.Printf("[dry-run] Would install: %v\n", toInstall)
+	} else {
+		if err := manager.Install(toInstall, nil); err != nil {
+			return fmt.Errorf("error installing packages: %w", err)
+		}
+
+		// Update lockfile
+		lockfile := NewStateManager(s.configPath)
+		if err := lockfile.Load(); err != nil && s.verbose {
+			fmt.Printf("Note: could not load lockfile: %v\n", err)
+		}
+		for _, pkg := range toInstall {
+			version, err := GetInstalledVersion(pkg)
+			if err == nil {
+				lockfile.SetPackageVersion(pkg, version)
+			}
+		}
+		if err := lockfile.Save(); err != nil {
+			fmt.Printf("Warning: failed to update lockfile: %v\n", err)
+		}
+	}
+
+	return nil
+}
+
 // syncState updates the state file with current package versions
 func (s *Settle) syncState() error {
 	stateMgr := NewStateManager(s.configPath)
