@@ -28,6 +28,7 @@ type State struct {
 type StateManager struct {
 	path  string
 	state *State
+	dirty bool
 }
 
 // NewStateManager creates a new state manager
@@ -62,8 +63,12 @@ func (s *StateManager) Load() error {
 	return nil
 }
 
-// Save writes the state file
+// Save writes the state file (only if changes were made)
 func (s *StateManager) Save() error {
+	if !s.dirty {
+		return nil
+	}
+
 	s.state.UpdatedAt = time.Now().Truncate(time.Second)
 
 	data, err := json.MarshalIndent(s.state, "", "  ")
@@ -75,6 +80,7 @@ func (s *StateManager) Save() error {
 		return fmt.Errorf("failed to write state file: %w", err)
 	}
 
+	s.dirty = false
 	return nil
 }
 
@@ -89,17 +95,22 @@ func (s *StateManager) GetPackageVersion(name string) (string, bool) {
 
 // SetPackageVersion updates the version for a package
 // Preserves existing InstalledAt if package already exists
+// Only marks state as dirty if there's an actual change
 func (s *StateManager) SetPackageVersion(name, version string) {
 	if existing, ok := s.state.Packages[name]; ok {
-		// Package exists - preserve install time, only update version
-		existing.Version = version
-		s.state.Packages[name] = existing
+		// Package exists - only update if version changed
+		if existing.Version != version {
+			existing.Version = version
+			s.state.Packages[name] = existing
+			s.dirty = true
+		}
 	} else {
 		// New package - set install time
 		s.state.Packages[name] = PackageState{
 			Version:     version,
 			InstalledAt: time.Now().Truncate(time.Second),
 		}
+		s.dirty = true
 	}
 }
 
@@ -203,5 +214,8 @@ func (s *StateManager) GetAllPackages() []string {
 
 // RemovePackage removes a package from the state
 func (s *StateManager) RemovePackage(name string) {
-	delete(s.state.Packages, name)
+	if _, ok := s.state.Packages[name]; ok {
+		delete(s.state.Packages, name)
+		s.dirty = true
+	}
 }
