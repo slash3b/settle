@@ -176,13 +176,11 @@ func (s *Settle) Install(packages []string) error {
 
 	// Only update config after successful install
 	if len(toAdd) > 0 {
-		s.config.Linux.Packages = append(s.config.Linux.Packages, toAdd...)
-
 		if s.dryRun {
 			fmt.Printf("[dry-run] Would add to config.toml: %v\n", toAdd)
 		} else {
-			if err := saveConfig(s.configPath, s.config); err != nil {
-				return fmt.Errorf("failed to save config: %w", err)
+			if err := addPackagesToConfig(s.configPath, toAdd); err != nil {
+				return fmt.Errorf("failed to update config: %w", err)
 			}
 			fmt.Printf("Added to config.toml: %v\n", toAdd)
 		}
@@ -255,34 +253,11 @@ func (s *Settle) Remove(packages []string) error {
 
 	// Remove from config
 	if len(toRemoveFromConfig) > 0 {
-		// Remove from packages list
-		removeSet := make(map[string]bool)
-		for _, pkg := range toRemoveFromConfig {
-			removeSet[pkg] = true
-		}
-
-		var newPackages []string
-		for _, pkg := range s.config.Linux.Packages {
-			if !removeSet[pkg] {
-				newPackages = append(newPackages, pkg)
-			}
-		}
-		s.config.Linux.Packages = newPackages
-
-		// Remove from package list (ones with post_install hooks)
-		var newPackageList []Package
-		for _, pkg := range s.config.Linux.Package {
-			if !removeSet[pkg.Name] {
-				newPackageList = append(newPackageList, pkg)
-			}
-		}
-		s.config.Linux.Package = newPackageList
-
 		if s.dryRun {
 			fmt.Printf("[dry-run] Would remove from config.toml: %v\n", toRemoveFromConfig)
 		} else {
-			if err := saveConfig(s.configPath, s.config); err != nil {
-				return fmt.Errorf("failed to save config: %w", err)
+			if err := removePackagesFromConfig(s.configPath, toRemoveFromConfig); err != nil {
+				return fmt.Errorf("failed to update config: %w", err)
 			}
 			fmt.Printf("Removed from config.toml: %v\n", toRemoveFromConfig)
 		}
