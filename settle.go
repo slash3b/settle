@@ -138,7 +138,43 @@ func (s *Settle) Install(packages []string) error {
 		}
 	}
 
-	// Add to config (only packages not already there)
+	// Filter to packages not installed on system
+	var toInstall []string
+	for _, pkg := range packages {
+		if notInstalledSet[pkg] {
+			toInstall = append(toInstall, pkg)
+		}
+	}
+
+	// Install packages first (before updating config)
+	if len(toInstall) > 0 {
+		if s.dryRun {
+			fmt.Printf("[dry-run] Would install: %v\n", toInstall)
+		} else {
+			if err := manager.Install(toInstall, nil); err != nil {
+				return fmt.Errorf("error installing packages: %w", err)
+			}
+
+			// Update lockfile
+			lockfile := NewStateManager(s.configPath)
+			if err := lockfile.Load(); err != nil && s.verbose {
+				fmt.Printf("Note: could not load lockfile: %v\n", err)
+			}
+			for _, pkg := range toInstall {
+				version, err := GetInstalledVersion(pkg)
+				if err == nil {
+					lockfile.SetPackageVersion(pkg, version)
+				}
+			}
+			if err := lockfile.Save(); err != nil {
+				fmt.Printf("Warning: failed to update lockfile: %v\n", err)
+			}
+		}
+	} else {
+		fmt.Println("All packages already installed on system")
+	}
+
+	// Only update config after successful install
 	if len(toAdd) > 0 {
 		s.config.Linux.Packages = append(s.config.Linux.Packages, toAdd...)
 
@@ -149,43 +185,6 @@ func (s *Settle) Install(packages []string) error {
 				return fmt.Errorf("failed to save config: %w", err)
 			}
 			fmt.Printf("Added to config.toml: %v\n", toAdd)
-		}
-	}
-
-	// Filter to packages not installed on system
-	var toInstall []string
-	for _, pkg := range packages {
-		if notInstalledSet[pkg] {
-			toInstall = append(toInstall, pkg)
-		}
-	}
-
-	if len(toInstall) == 0 {
-		fmt.Println("All packages already installed on system")
-		return nil
-	}
-
-	// Install missing packages
-	if s.dryRun {
-		fmt.Printf("[dry-run] Would install: %v\n", toInstall)
-	} else {
-		if err := manager.Install(toInstall, nil); err != nil {
-			return fmt.Errorf("error installing packages: %w", err)
-		}
-
-		// Update lockfile
-		lockfile := NewStateManager(s.configPath)
-		if err := lockfile.Load(); err != nil && s.verbose {
-			fmt.Printf("Note: could not load lockfile: %v\n", err)
-		}
-		for _, pkg := range toInstall {
-			version, err := GetInstalledVersion(pkg)
-			if err == nil {
-				lockfile.SetPackageVersion(pkg, version)
-			}
-		}
-		if err := lockfile.Save(); err != nil {
-			fmt.Printf("Warning: failed to update lockfile: %v\n", err)
 		}
 	}
 
