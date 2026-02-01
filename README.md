@@ -4,5 +4,10 @@ A small utility to help me organize my installed software and configuration. It'
 ## Installation (Debian/Ubuntu)
 
 ```bash
-curl -L https://github.com/slash3b/settle/releases/latest/download/settle-linux-amd64 -o ~/.local/bin/settle && chmod +x ~/.local/bin/settle
+# Download latest release, make executable, and install to ~/.local/bin
+curl -fL https://github.com/slash3b/settle/releases/latest/download/settle-linux-amd64 -o /tmp/settle \
+  && chmod +x /tmp/settle \
+  && mv -f /tmp/settle ~/.local/bin/settle
 ```
+
+Make sure `~/.local/bin` is in your `PATH`.
