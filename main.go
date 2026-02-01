@@ -68,6 +68,16 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "remove":
+			if len(args) < 2 {
+				fmt.Fprintf(os.Stderr, "Usage: settle remove <package> [package...]\n")
+				os.Exit(1)
+			}
+			if err := settle.Remove(args[1:]); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		default:
 			fmt.Fprintf(os.Stderr, "Unknown command: %s\n", args[0])
 			os.Exit(1)

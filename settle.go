@@ -192,6 +192,140 @@ func (s *Settle) Install(packages []string) error {
 	return nil
 }
 
+// Remove removes packages from config.toml and uninstalls them
+func (s *Settle) Remove(packages []string) error {
+	if len(packages) == 0 {
+		return fmt.Errorf("no packages specified")
+	}
+
+	if s.config.Linux == nil {
+		fmt.Println("No packages configured")
+		return nil
+	}
+
+	// Check which packages are in config
+	inConfig := make(map[string]bool)
+	for _, pkg := range s.config.Linux.Packages {
+		inConfig[pkg] = true
+	}
+	for _, pkg := range s.config.Linux.Package {
+		inConfig[pkg.Name] = true
+	}
+
+	// Check which packages are installed on system
+	distro := DetectDistro()
+	if !distro.IsDebianBased() {
+		return fmt.Errorf("unsupported distribution: %s", distro)
+	}
+	manager := NewDebianManager(s.verbose)
+
+	notInstalled, err := manager.CheckInstalled(packages)
+	if err != nil {
+		return fmt.Errorf("error checking packages: %w", err)
+	}
+	installedSet := make(map[string]bool)
+	for _, pkg := range packages {
+		installedSet[pkg] = true
+	}
+	for _, pkg := range notInstalled {
+		delete(installedSet, pkg)
+	}
+
+	// Check if none of the packages are in config or installed
+	anyWork := false
+	for _, pkg := range packages {
+		if inConfig[pkg] || installedSet[pkg] {
+			anyWork = true
+			break
+		}
+	}
+	if !anyWork {
+		fmt.Println("None of the packages are in config or installed")
+		return nil
+	}
+
+	// Filter to packages in config
+	var toRemoveFromConfig []string
+	for _, pkg := range packages {
+		if inConfig[pkg] {
+			toRemoveFromConfig = append(toRemoveFromConfig, pkg)
+		} else if s.verbose {
+			fmt.Printf("Package %s not in config\n", pkg)
+		}
+	}
+
+	// Remove from config
+	if len(toRemoveFromConfig) > 0 {
+		// Remove from packages list
+		removeSet := make(map[string]bool)
+		for _, pkg := range toRemoveFromConfig {
+			removeSet[pkg] = true
+		}
+
+		var newPackages []string
+		for _, pkg := range s.config.Linux.Packages {
+			if !removeSet[pkg] {
+				newPackages = append(newPackages, pkg)
+			}
+		}
+		s.config.Linux.Packages = newPackages
+
+		// Remove from package list (ones with post_install hooks)
+		var newPackageList []Package
+		for _, pkg := range s.config.Linux.Package {
+			if !removeSet[pkg.Name] {
+				newPackageList = append(newPackageList, pkg)
+			}
+		}
+		s.config.Linux.Package = newPackageList
+
+		if s.dryRun {
+			fmt.Printf("[dry-run] Would remove from config.toml: %v\n", toRemoveFromConfig)
+		} else {
+			if err := saveConfig(s.configPath, s.config); err != nil {
+				return fmt.Errorf("failed to save config: %w", err)
+			}
+			fmt.Printf("Removed from config.toml: %v\n", toRemoveFromConfig)
+		}
+	}
+
+	// Filter to packages that are installed
+	var toUninstall []string
+	for _, pkg := range packages {
+		if installedSet[pkg] {
+			toUninstall = append(toUninstall, pkg)
+		}
+	}
+
+	if len(toUninstall) == 0 {
+		fmt.Println("No packages to uninstall (not installed on system)")
+		return nil
+	}
+
+	// Uninstall packages
+	if s.dryRun {
+		fmt.Printf("[dry-run] Would uninstall: %v\n", toUninstall)
+	} else {
+		if err := manager.Remove(toUninstall); err != nil {
+			return fmt.Errorf("error removing packages: %w", err)
+		}
+
+		// Update lockfile
+		lockfile := NewStateManager(s.configPath)
+		if err := lockfile.Load(); err != nil && s.verbose {
+			fmt.Printf("Note: could not load lockfile: %v\n", err)
+		}
+		for _, pkg := range toUninstall {
+			lockfile.RemovePackage(pkg)
+		}
+		if err := lockfile.Save(); err != nil {
+			fmt.Printf("Warning: failed to update lockfile: %v\n", err)
+		}
+	}
+
+	return nil
+}
+
 // syncState updates the state file with current package versions
 func (s *Settle) syncState() error {
 	stateMgr := NewStateManager(s.configPath)

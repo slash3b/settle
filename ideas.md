@@ -25,7 +25,7 @@ The philosophy of `settle` is: **"Read the TOML, make the machine match."**
 
 ### Package Management CLI
 - [x] `settle install <package>` - Add to TOML and install immediately
-- [ ] `settle remove <package>` - Remove from TOML and uninstall
+- [x] `settle remove <package>` - Remove from TOML and uninstall
 - [ ] `settle update` - Upgrade all managed packages to latest versions
 
 ### Maintenance
