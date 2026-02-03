@@ -146,7 +146,7 @@ func (s *Settle) Install(packages []string) error {
 		}
 	}
 
-	// Install packages first (before updating config)
+	// Install packages
 	if len(toInstall) > 0 {
 		if s.dryRun {
 			fmt.Printf("[dry-run] Would install: %v\n", toInstall)
@@ -174,15 +174,11 @@ func (s *Settle) Install(packages []string) error {
 		fmt.Println("All packages already installed on system")
 	}
 
-	// Only update config after successful install
+	// Remind user to add to config (if not already there)
 	if len(toAdd) > 0 {
-		if s.dryRun {
-			fmt.Printf("[dry-run] Would add to config.toml: %v\n", toAdd)
-		} else {
-			if err := addPackagesToConfig(s.configPath, toAdd); err != nil {
-				return fmt.Errorf("failed to update config: %w", err)
-			}
-			fmt.Printf("Added to config.toml: %v\n", toAdd)
+		fmt.Println("\nTo track these packages, add to your config.toml:")
+		for _, pkg := range toAdd {
+			fmt.Printf("    \"%s\",\n", pkg)
 		}
 	}
 
@@ -251,16 +247,14 @@ func (s *Settle) Remove(packages []string) error {
 		}
 	}
 
-	// Remove from config
-	if len(toRemoveFromConfig) > 0 {
-		if s.dryRun {
-			fmt.Printf("[dry-run] Would remove from config.toml: %v\n", toRemoveFromConfig)
-		} else {
-			if err := removePackagesFromConfig(s.configPath, toRemoveFromConfig); err != nil {
-				return fmt.Errorf("failed to update config: %w", err)
-			}
-			fmt.Printf("Removed from config.toml: %v\n", toRemoveFromConfig)
+	// Remind user to remove from config
+	if len(toRemoveFromConfig) > 0 && !s.dryRun {
+		fmt.Println("\nRemember to remove from your config.toml:")
+		for _, pkg := range toRemoveFromConfig {
+			fmt.Printf("    \"%s\"\n", pkg)
 		}
+	} else if len(toRemoveFromConfig) > 0 {
+		fmt.Printf("[dry-run] Would remind to remove from config: %v\n", toRemoveFromConfig)
 	}
 
 	// Filter to packages that are installed
