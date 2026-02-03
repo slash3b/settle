@@ -24,8 +24,8 @@ The philosophy of `settle` is: **"Read the TOML, make the machine match."**
 - [ ] `--only packages` (or `settle soft`) - Skip dotfiles, only install software
 
 ### Package Management CLI
-- [x] `settle install <package>` - Add to TOML and install immediately
-- [x] `settle remove <package>` - Remove from TOML and uninstall
+- [x] `settle install <package>` - Install package, remind user to add to config
+- [x] `settle remove <package>` - Uninstall package, remind user to remove from config
 - [ ] `settle update` - Upgrade all managed packages to latest versions
 
 ### Maintenance
