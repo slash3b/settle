@@ -131,8 +131,8 @@ func (d *DebianManager) Install(packages []string, versions map[string]string) e
 	return err
 }
 
-// Update runs apt-get update
-func (d *DebianManager) Update() error {
+// RefreshPackageLists runs apt-get update
+func (d *DebianManager) RefreshPackageLists() error {
 	cmd := exec.Command("sudo", "apt-get", "update", "-y")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -140,6 +140,39 @@ func (d *DebianManager) Update() error {
 
 	fmt.Println("Updating package lists...")
 	return cmd.Run()
+}
+
+// Upgrade upgrades specific packages using apt-get install --only-upgrade
+func (d *DebianManager) Upgrade(packages []string) error {
+	if len(packages) == 0 {
+		return nil
+	}
+
+	args := append([]string{"install", "--only-upgrade", "-y"}, packages...)
+	cmd := exec.Command("sudo", append([]string{"apt-get"}, args...)...)
+
+	if d.verbose {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		fmt.Printf("Upgrading %d packages...\n", len(packages))
+	} else {
+		fmt.Printf("Upgrading %d packages... ", len(packages))
+	}
+
+	cmd.Stdin = os.Stdin
+	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
+
+	err := cmd.Run()
+
+	if !d.verbose {
+		if err != nil {
+			fmt.Println("failed")
+		} else {
+			fmt.Println("done")
+		}
+	}
+
+	return err
 }
 
 // Remove removes a list of packages using apt-get

@@ -26,7 +26,7 @@ The philosophy of `settle` is: **"Read the TOML, make the machine match."**
 ### Package Management CLI
 - [x] `settle install <package>` - Install package, remind user to add to config
 - [x] `settle remove <package>` - Uninstall package, remind user to remove from config
-- [ ] `settle update` - Upgrade all managed packages to latest versions
+- [x] `settle update` - Upgrade all managed packages to latest versions
 
 ### Maintenance
 - [ ] `settle clean` / `prune` - Remove broken symlinks, clean up orphaned files

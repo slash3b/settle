@@ -294,6 +294,71 @@ func (s *Settle) Remove(packages []string) error {
 	return nil
 }
 
+// Update upgrades all managed packages to their latest versions
+func (s *Settle) Update() error {
+	if s.config.Linux == nil {
+		fmt.Println("No packages configured")
+		return nil
+	}
+
+	distro := DetectDistro()
+	if !distro.IsDebianBased() {
+		return fmt.Errorf("unsupported distribution: %s", distro)
+	}
+
+	manager := NewDebianManager(s.verbose)
+
+	// Collect all packages from config
+	var allPackages []string
+	allPackages = append(allPackages, s.config.Linux.Packages...)
+	for _, pkg := range s.config.Linux.Package {
+		allPackages = append(allPackages, pkg.Name)
+	}
+
+	if len(allPackages) == 0 {
+		fmt.Println("No packages to update")
+		return nil
+	}
+
+	fmt.Printf("Updating %d managed packages...\n", len(allPackages))
+
+	if s.dryRun {
+		fmt.Println("[dry-run] Would run: apt-get update")
+		fmt.Printf("[dry-run] Would upgrade: %v\n", allPackages)
+		return nil
+	}
+
+	// Refresh package lists
+	if err := manager.RefreshPackageLists(); err != nil {
+		return fmt.Errorf("failed to update package lists: %w", err)
+	}
+
+	// Upgrade managed packages
+	if err := manager.Upgrade(allPackages); err != nil {
+		return fmt.Errorf("failed to upgrade packages: %w", err)
+	}
+
+	// Update lockfile with new versions
+	lockfile := NewStateManager(s.configPath)
+	if err := lockfile.Load(); err != nil && s.verbose {
+		fmt.Printf("Note: could not load lockfile: %v\n", err)
+	}
+
+	for _, pkg := range allPackages {
+		version, err := GetInstalledVersion(pkg)
+		if err == nil {
+			lockfile.SetPackageVersion(pkg, version)
+		}
+	}
+
+	if err := lockfile.Save(); err != nil {
+		fmt.Printf("Warning: failed to update lockfile: %v\n", err)
+	}
+
+	fmt.Println("Done!")
+	return nil
+}
+
 // syncState updates the state file with current package versions
 func (s *Settle) syncState() error {
 	stateMgr := NewStateManager(s.configPath)

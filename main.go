@@ -104,6 +104,12 @@ func main() {
 				os.Exit(1)
 			}
 			return
+		case "update":
+			if err := settle.Update(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		default:
 			fmt.Fprintf(os.Stderr, "Unknown command: %s\n", args[0])
 			os.Exit(1)
