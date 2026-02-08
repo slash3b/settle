@@ -439,9 +439,33 @@ func (s *Settle) applyLinux() error {
 		missingSet[pkg] = true
 	}
 
-	installedCount := len(allPackages) - len(missingPackages)
+	// Check installed packages against lockfile versions
+	var versionMismatched []string
+	versionMismatchSet := make(map[string]bool)
+	for _, pkg := range allPackages {
+		if missingSet[pkg] {
+			continue
+		}
+		lockVersion, ok := lockfile.GetPackageVersion(pkg)
+		if !ok {
+			continue
+		}
+		installedVersion, err := GetInstalledVersion(pkg)
+		if err != nil {
+			continue
+		}
+		if installedVersion != lockVersion {
+			versionMismatched = append(versionMismatched, pkg)
+			versionMismatchSet[pkg] = true
+		}
+	}
+
+	installedCount := len(allPackages) - len(missingPackages) - len(versionMismatched)
 	fmt.Printf("Already installed: %d\n", installedCount)
 	fmt.Printf("Need to install: %d\n", len(missingPackages))
+	if len(versionMismatched) > 0 {
+		fmt.Printf("Version mismatch: %d\n", len(versionMismatched))
+	}
 
 	// Filter out unknown packages and build versions map
 	var installable []string
@@ -453,6 +477,14 @@ func (s *Settle) applyLinux() error {
 			unknown = append(unknown, pkg)
 			continue
 		}
+		installable = append(installable, pkg)
+		if version, ok := lockfile.GetPackageVersion(pkg); ok {
+			versions[pkg] = version
+		}
+	}
+
+	// Add version-mismatched packages (installed but wrong version per lockfile)
+	for _, pkg := range versionMismatched {
 		installable = append(installable, pkg)
 		if version, ok := lockfile.GetPackageVersion(pkg); ok {
 			versions[pkg] = version
@@ -526,6 +558,8 @@ func (s *Settle) applyLinux() error {
 		status := StatusSkipped
 		if missingSet[pkg] && !unknownSet[pkg] {
 			status = StatusInstalled
+		} else if versionMismatchSet[pkg] {
+			status = StatusPinned
 		}
 		statuses = append(statuses, PackageStatus{
 			Name:   pkg,
