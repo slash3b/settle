@@ -592,11 +592,11 @@ func (s *Settle) List() error {
 
 // packageInfo holds version information for a package
 type packageInfo struct {
-	name         string
-	installed    string
-	available    string
-	isMissing    bool
-	notFound     bool
+	name      string
+	installed string
+	available string
+	isMissing bool
+	notFound  bool
 }
 
 // listLinux lists all Linux packages and their status
