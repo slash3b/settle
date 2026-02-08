@@ -29,6 +29,22 @@ func printVersion() {
 	fmt.Printf("binary: %s\n", exe)
 }
 
+func printUsage() {
+	fmt.Fprintf(os.Stderr, `Usage: settle [flags] [command] [args]
+
+Commands:
+  apply              Apply configuration (default when no command given)
+  install <pkg>...   Install packages and track in lockfile
+  remove <pkg>...    Remove packages and update lockfile
+  update             Upgrade all managed packages to latest versions
+  list               Show status of all packages and dotfiles
+  version            Show version information
+
+Flags:
+`)
+	flag.PrintDefaults()
+}
+
 func main() {
 	// Parse command line flags
 	flag.BoolVar(&verbose, "v", false, "Enable verbose output")
@@ -37,6 +53,7 @@ func main() {
 	flag.BoolVar(&dryRun, "dry-run", false, "Show what would be done without making changes")
 	flag.BoolVar(&dryRun, "n", false, "Show what would be done without making changes")
 	flag.BoolVar(&showVersion, "version", false, "Show version information")
+	flag.Usage = printUsage
 	flag.Parse()
 
 	// Handle --version flag early
@@ -111,7 +128,8 @@ func main() {
 			}
 			return
 		default:
-			fmt.Fprintf(os.Stderr, "Unknown command: %s\n", args[0])
+			fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", args[0])
+			printUsage()
 			os.Exit(1)
 		}
 	}
