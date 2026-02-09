@@ -19,10 +19,10 @@ type cmdCall struct {
 }
 
 type cmdRecorder struct {
-	Calls  []cmdCall
-	output []byte  // stdout data to return
-	err    error   // error to return from cmd.Run/Output
-	exitCode int   // for CombinedOutput / Run
+	Calls    []cmdCall
+	output   []byte // stdout data to return
+	err      error  // error to return from cmd.Run/Output
+	exitCode int    // for CombinedOutput / Run
 }
 
 // mockExecSuccess returns a function that replaces execCommand.

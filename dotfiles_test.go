@@ -828,7 +828,6 @@ func TestCopyFile_DestOpenError(t *testing.T) {
 	assertError(t, err)
 }
 
-
 func TestApply_SourceMissing(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
