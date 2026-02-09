@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -114,9 +113,10 @@ func (s *StateManager) SetPackageVersion(name, version string) {
 	}
 }
 
-// GetInstalledVersion queries dpkg for the installed version of a package
-func GetInstalledVersion(name string) (string, error) {
-	cmd := exec.Command("dpkg-query", "-W", "-f=${Version}", name)
+// GetInstalledVersion queries dpkg for the installed version of a package.
+// This is a function variable so it can be swapped in tests.
+var GetInstalledVersion = func(name string) (string, error) {
+	cmd := execCommand("dpkg-query", "-W", "-f=${Version}", name)
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -124,9 +124,10 @@ func GetInstalledVersion(name string) (string, error) {
 	return strings.TrimSpace(string(output)), nil
 }
 
-// GetAvailableVersion queries apt-cache for the candidate version of a package
-func GetAvailableVersion(name string) (string, error) {
-	cmd := exec.Command("apt-cache", "policy", name)
+// GetAvailableVersion queries apt-cache for the candidate version of a package.
+// This is a function variable so it can be swapped in tests.
+var GetAvailableVersion = func(name string) (string, error) {
+	cmd := execCommand("apt-cache", "policy", name)
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err

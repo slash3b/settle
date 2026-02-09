@@ -14,10 +14,13 @@ const (
 	DistroUnknown Distro = "unknown"
 )
 
+// osReleasePath is the path to the os-release file, swappable in tests.
+var osReleasePath = "/etc/os-release"
+
 // DetectDistro detects the current Linux distribution
 func DetectDistro() Distro {
 	// Read /etc/os-release which is standard on modern Linux
-	data, err := os.ReadFile("/etc/os-release")
+	data, err := os.ReadFile(osReleasePath)
 	if err != nil {
 		return DistroUnknown
 	}

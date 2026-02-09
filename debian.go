@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 )
+
+// execCommand is a package-level variable for exec.Command, swappable in tests.
+var execCommand = exec.Command
 
 // DebianManager handles Debian package operations
 type DebianManager struct {
@@ -21,7 +25,7 @@ func NewDebianManager(verbose bool) *DebianManager {
 func (d *DebianManager) IsInstalled(packageName string) (bool, error) {
 	// Use dpkg-query with format to check install status
 	// This returns "install ok installed" for installed packages
-	cmd := exec.Command("dpkg-query", "-W", "-f=${Status}", packageName)
+	cmd := execCommand("dpkg-query", "-W", "-f=${Status}", packageName)
 	output, err := cmd.Output()
 	if err != nil {
 		// Package not found or error
@@ -105,13 +109,15 @@ func (d *DebianManager) Install(packages []string, versions map[string]string) e
 	}
 
 	args := append([]string{"install", "-y"}, packageSpecs...)
-	cmd := exec.Command("sudo", append([]string{"apt-get"}, args...)...)
+	cmd := execCommand("sudo", append([]string{"apt-get"}, args...)...)
 
+	var stderr bytes.Buffer
 	if d.verbose {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		fmt.Printf("Installing %d packages...\n", len(packages))
 	} else {
+		cmd.Stderr = &stderr
 		fmt.Printf("Installing %d packages... ", len(packages))
 	}
 
@@ -123,6 +129,9 @@ func (d *DebianManager) Install(packages []string, versions map[string]string) e
 	if !d.verbose {
 		if err != nil {
 			fmt.Println("failed")
+			if stderr.Len() > 0 {
+				fmt.Print(stderr.String())
+			}
 		} else {
 			fmt.Println("done")
 		}
@@ -133,7 +142,7 @@ func (d *DebianManager) Install(packages []string, versions map[string]string) e
 
 // RefreshPackageLists runs apt-get update
 func (d *DebianManager) RefreshPackageLists() error {
-	cmd := exec.Command("sudo", "apt-get", "update", "-y")
+	cmd := execCommand("sudo", "apt-get", "update", "-y")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
@@ -149,13 +158,15 @@ func (d *DebianManager) Upgrade(packages []string) error {
 	}
 
 	args := append([]string{"install", "--only-upgrade", "-y"}, packages...)
-	cmd := exec.Command("sudo", append([]string{"apt-get"}, args...)...)
+	cmd := execCommand("sudo", append([]string{"apt-get"}, args...)...)
 
+	var stderr bytes.Buffer
 	if d.verbose {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		fmt.Printf("Upgrading %d packages...\n", len(packages))
 	} else {
+		cmd.Stderr = &stderr
 		fmt.Printf("Upgrading %d packages... ", len(packages))
 	}
 
@@ -167,6 +178,9 @@ func (d *DebianManager) Upgrade(packages []string) error {
 	if !d.verbose {
 		if err != nil {
 			fmt.Println("failed")
+			if stderr.Len() > 0 {
+				fmt.Print(stderr.String())
+			}
 		} else {
 			fmt.Println("done")
 		}
@@ -182,13 +196,15 @@ func (d *DebianManager) Remove(packages []string) error {
 	}
 
 	args := append([]string{"remove", "-y"}, packages...)
-	cmd := exec.Command("sudo", append([]string{"apt-get"}, args...)...)
+	cmd := execCommand("sudo", append([]string{"apt-get"}, args...)...)
 
+	var stderr bytes.Buffer
 	if d.verbose {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		fmt.Printf("Removing %d packages...\n", len(packages))
 	} else {
+		cmd.Stderr = &stderr
 		fmt.Printf("Removing %d packages... ", len(packages))
 	}
 
@@ -200,6 +216,9 @@ func (d *DebianManager) Remove(packages []string) error {
 	if !d.verbose {
 		if err != nil {
 			fmt.Println("failed")
+			if stderr.Len() > 0 {
+				fmt.Print(stderr.String())
+			}
 		} else {
 			fmt.Println("done")
 		}
@@ -221,7 +240,7 @@ func (d *DebianManager) RunPostInstall(packageName, script string) error {
 		fmt.Printf("Running post-install for %s... ", packageName)
 	}
 
-	cmd := exec.Command("bash", "-c", script)
+	cmd := execCommand("bash", "-c", script)
 
 	if d.verbose {
 		cmd.Stdout = os.Stdout
