@@ -6,21 +6,21 @@ import (
 	"testing"
 )
 
-func TestLoadConfig_ValidLinux(t *testing.T) {
+func TestLoadConfig_ValidApt(t *testing.T) {
 	path := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim", "curl", "git"]
 `)
 	cfg, err := loadConfig(path)
 	assertNoError(t, err)
 
-	if cfg.Linux == nil {
-		t.Fatal("expected Linux config to be non-nil")
+	if cfg.Apt == nil {
+		t.Fatal("expected Apt config to be non-nil")
 	}
-	assertEqualInt(t, len(cfg.Linux.Packages), 3)
-	assertEqualStr(t, cfg.Linux.Packages[0], "vim")
-	assertEqualStr(t, cfg.Linux.Packages[1], "curl")
-	assertEqualStr(t, cfg.Linux.Packages[2], "git")
+	assertEqualInt(t, len(cfg.Apt.Packages), 3)
+	assertEqualStr(t, cfg.Apt.Packages[0], "vim")
+	assertEqualStr(t, cfg.Apt.Packages[1], "curl")
+	assertEqualStr(t, cfg.Apt.Packages[2], "git")
 }
 
 func TestLoadConfig_ValidDotfiles(t *testing.T) {
@@ -53,23 +53,23 @@ mode = "copy"
 
 func TestLoadConfig_PackageWithPostInstall(t *testing.T) {
 	path := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["curl"]
 
-[[linux.package]]
+[[apt.post_hook]]
 name = "pipewire"
 post_install = "systemctl --user --now enable wireplumber.service"
 `)
 	cfg, err := loadConfig(path)
 	assertNoError(t, err)
 
-	if cfg.Linux == nil {
-		t.Fatal("expected Linux config to be non-nil")
+	if cfg.Apt == nil {
+		t.Fatal("expected Apt config to be non-nil")
 	}
-	assertEqualInt(t, len(cfg.Linux.Packages), 1)
-	assertEqualInt(t, len(cfg.Linux.Package), 1)
-	assertEqualStr(t, cfg.Linux.Package[0].Name, "pipewire")
-	assertEqualStr(t, cfg.Linux.Package[0].PostInstall, "systemctl --user --now enable wireplumber.service")
+	assertEqualInt(t, len(cfg.Apt.Packages), 1)
+	assertEqualInt(t, len(cfg.Apt.PostHooks), 1)
+	assertEqualStr(t, cfg.Apt.PostHooks[0].Name, "pipewire")
+	assertEqualStr(t, cfg.Apt.PostHooks[0].PostInstall, "systemctl --user --now enable wireplumber.service")
 }
 
 func TestLoadConfig_Empty(t *testing.T) {
@@ -77,8 +77,8 @@ func TestLoadConfig_Empty(t *testing.T) {
 	cfg, err := loadConfig(path)
 	assertNoError(t, err)
 
-	if cfg.Linux != nil {
-		t.Error("expected Linux config to be nil for empty config")
+	if cfg.Apt != nil {
+		t.Error("expected Apt config to be nil for empty config")
 	}
 	if cfg.Dotfiles != nil {
 		t.Error("expected Dotfiles config to be nil for empty config")
@@ -100,10 +100,10 @@ func TestLoadConfig_InvalidTOML(t *testing.T) {
 
 func TestLoadConfig_FullConfig(t *testing.T) {
 	path := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim", "curl"]
 
-[[linux.package]]
+[[apt.post_hook]]
 name = "pipewire"
 post_install = "systemctl --user enable wireplumber"
 
@@ -117,14 +117,14 @@ dest = "~/.vimrc"
 	cfg, err := loadConfig(path)
 	assertNoError(t, err)
 
-	if cfg.Linux == nil {
-		t.Fatal("expected Linux config")
+	if cfg.Apt == nil {
+		t.Fatal("expected Apt config")
 	}
 	if cfg.Dotfiles == nil {
 		t.Fatal("expected Dotfiles config")
 	}
-	assertEqualInt(t, len(cfg.Linux.Packages), 2)
-	assertEqualInt(t, len(cfg.Linux.Package), 1)
+	assertEqualInt(t, len(cfg.Apt.Packages), 2)
+	assertEqualInt(t, len(cfg.Apt.PostHooks), 1)
 	assertEqualInt(t, len(cfg.Dotfiles.Files), 1)
 }
 

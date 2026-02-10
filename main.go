@@ -70,6 +70,7 @@ func main() {
 
 	if runtime.GOOS != "linux" {
 		fmt.Fprintf(os.Stderr, "%s is not supported\n", runtime.GOOS)
+
 		os.Exit(1)
 	}
 
@@ -80,9 +81,11 @@ func main() {
 	go func() {
 		<-sigChan
 		fmt.Println("\n\nInterrupted! Cleaning up...")
+
 		os.Exit(130) // Standard exit code for SIGINT
 	}()
 
+	//
 	cfg, err := loadConfig(configPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)

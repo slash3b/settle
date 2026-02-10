@@ -30,12 +30,14 @@ type cmdRecorder struct {
 // succeed with the given stdout output.
 func mockExecSuccess(output string) (func(name string, arg ...string) *exec.Cmd, *cmdRecorder) {
 	rec := &cmdRecorder{output: []byte(output)}
+
 	fn := func(name string, arg ...string) *exec.Cmd {
 		rec.Calls = append(rec.Calls, cmdCall{Name: name, Args: arg})
 		// Use "echo" to produce the output
 		cmd := exec.Command("echo", "-n", output)
 		return cmd
 	}
+
 	return fn, rec
 }
 
@@ -44,11 +46,13 @@ func mockExecSuccess(output string) (func(name string, arg ...string) *exec.Cmd,
 // fail with exit code 1.
 func mockExecFailure() (func(name string, arg ...string) *exec.Cmd, *cmdRecorder) {
 	rec := &cmdRecorder{}
+
 	fn := func(name string, arg ...string) *exec.Cmd {
 		rec.Calls = append(rec.Calls, cmdCall{Name: name, Args: arg})
 		cmd := exec.Command("false")
 		return cmd
 	}
+
 	return fn, rec
 }
 
@@ -61,11 +65,13 @@ func mockExecFunc(cb func(name string, arg ...string) *exec.Cmd) func(name strin
 // withTempConfig writes TOML content to a temporary file and returns its path.
 func withTempConfig(t *testing.T, content string) string {
 	t.Helper()
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("failed to write temp config: %v", err)
 	}
+
 	return path
 }
 
@@ -73,11 +79,13 @@ func withTempConfig(t *testing.T, content string) string {
 // whatever was written.
 func captureOutput(t *testing.T, fn func()) string {
 	t.Helper()
+
 	old := os.Stdout
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe: %v", err)
 	}
+
 	os.Stdout = w
 
 	fn()

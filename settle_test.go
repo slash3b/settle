@@ -42,7 +42,7 @@ func TestApply_AllInstalled(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim", "git"]
 `)
 
@@ -84,7 +84,7 @@ func TestApply_InstallsMissing(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim", "curl"]
 `)
 
@@ -120,7 +120,7 @@ func TestApply_PinsToLockfileForMissing(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["curl"]
 `)
 	// Write a lockfile with a specific version
@@ -153,7 +153,7 @@ func TestApply_UpdatesLockfileOnVersionMismatch(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
@@ -189,7 +189,7 @@ func TestApply_RemovesUntracked(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 	// Lockfile has vim AND git, but git is not in config
@@ -225,7 +225,7 @@ func TestApply_DryRun(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["curl"]
 `)
 
@@ -256,7 +256,7 @@ func TestApply_SkipsUnknownPackages(t *testing.T) {
 	mockAvailableVersion(map[string]string{}) // empty = all unknown
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["badpkg"]
 `)
 
@@ -277,7 +277,7 @@ func TestApply_UnsupportedDistro(t *testing.T) {
 	writeOsRelease(t, "ID=arch\n")
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 
@@ -307,7 +307,7 @@ func TestApply_Verbose(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
@@ -329,7 +329,7 @@ func TestApply_NoPackagesConfigured(t *testing.T) {
 	writeOsRelease(t, "ID=debian\n")
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = []
 `)
 
@@ -341,7 +341,7 @@ packages = []
 		assertNoError(t, err)
 	})
 
-	assertContains(t, out, "No Debian packages configured")
+	assertContains(t, out, "No apt packages configured")
 }
 
 func TestApply_PostInstallHooks(t *testing.T) {
@@ -364,9 +364,9 @@ func TestApply_PostInstallHooks(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 
-[[linux.package]]
+[[apt.post_hook]]
 name = "pipewire"
 post_install = "echo post-install-ran"
 `)
@@ -399,9 +399,9 @@ func TestApply_DryRunWithPostInstall(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 
-[[linux.package]]
+[[apt.post_hook]]
 name = "pipewire"
 post_install = "echo test"
 `)
@@ -433,7 +433,7 @@ func TestApply_DryRunRemovesUntracked(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"},"git":{"version":"2.40.0","installed_at":"2024-01-01T00:00:00Z"}}}`)
@@ -618,7 +618,7 @@ func TestInstall_NewPackage(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = []
 `)
 
@@ -645,7 +645,7 @@ func TestInstall_AlreadyInstalledAndInConfig(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
@@ -673,7 +673,7 @@ func TestInstall_UpdatesLockfileOnMismatch(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
@@ -702,7 +702,7 @@ func TestInstall_DryRun(t *testing.T) {
 	}
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = []
 `)
 
@@ -750,7 +750,7 @@ func TestInstall_VerboseOutput(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
@@ -781,7 +781,7 @@ func TestInstall_NotInConfigShowsReminder(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 
@@ -797,7 +797,7 @@ packages = ["vim"]
 	assertContains(t, out, "curl")
 }
 
-func TestInstall_CreatesLinuxSection(t *testing.T) {
+func TestInstall_CreatesAptSection(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
@@ -811,7 +811,7 @@ func TestInstall_CreatesLinuxSection(t *testing.T) {
 		"curl": "7.88.1",
 	})
 
-	// Config with no linux section at all
+	// Config with no apt section at all
 	configPath := withTempConfig(t, "")
 
 	cfg, _ := loadConfig(configPath)
@@ -835,7 +835,7 @@ func TestInstall_AllAlreadyOnSystem(t *testing.T) {
 	mockInstalledVersion(map[string]string{})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = []
 `)
 
@@ -862,9 +862,9 @@ func TestInstall_PackageInPackageSection(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 
-[[linux.package]]
+[[apt.post_hook]]
 name = "pipewire"
 post_install = "echo test"
 `)
@@ -895,7 +895,7 @@ func TestRemove_InstalledPackage(t *testing.T) {
 	}
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
@@ -921,7 +921,7 @@ func TestRemove_NotInstalled(t *testing.T) {
 	}
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = []
 `)
 
@@ -949,7 +949,7 @@ func TestRemove_DryRun(t *testing.T) {
 	}
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 
@@ -973,7 +973,7 @@ func TestRemove_NoPackagesSpecified(t *testing.T) {
 	assertContains(t, err.Error(), "no packages specified")
 }
 
-func TestRemove_NoLinuxConfig(t *testing.T) {
+func TestRemove_NoAptConfig(t *testing.T) {
 	cfg := &Config{}
 	s := NewSettle(cfg, "/tmp/config.toml", false, false)
 
@@ -989,7 +989,7 @@ func TestRemove_UnsupportedDistro(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=arch\n")
 
-	cfg := &Config{Linux: &LinuxConfig{Packages: []string{"vim"}}}
+	cfg := &Config{Apt: &AptConfig{Packages: []string{"vim"}}}
 	s := NewSettle(cfg, "/tmp/config.toml", false, false)
 
 	err := s.Remove([]string{"vim"})
@@ -1009,7 +1009,7 @@ func TestRemove_NotInConfigButInstalled(t *testing.T) {
 	}
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["git"]
 `)
 
@@ -1037,7 +1037,7 @@ func TestRemove_VerboseOutput(t *testing.T) {
 	}
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 
@@ -1064,7 +1064,7 @@ func TestRemove_InstalledNotInConfig_NoUninstall(t *testing.T) {
 	}
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 
@@ -1092,7 +1092,7 @@ func TestRemove_DryRunConfigReminder(t *testing.T) {
 	}
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 
@@ -1120,9 +1120,9 @@ func TestRemove_PackageInPackageSection(t *testing.T) {
 	}
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 
-[[linux.package]]
+[[apt.post_hook]]
 name = "pipewire"
 `)
 
@@ -1151,7 +1151,7 @@ func TestUpdate_Success(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 
@@ -1180,7 +1180,7 @@ func TestUpdate_NoPackages(t *testing.T) {
 }
 
 func TestUpdate_EmptyPackages(t *testing.T) {
-	cfg := &Config{Linux: &LinuxConfig{}}
+	cfg := &Config{Apt: &AptConfig{}}
 	s := NewSettle(cfg, "/tmp/config.toml", false, false)
 
 	out := captureOutput(t, func() {
@@ -1196,7 +1196,7 @@ func TestUpdate_DryRun(t *testing.T) {
 	writeOsRelease(t, "ID=debian\n")
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 
@@ -1216,7 +1216,7 @@ func TestUpdate_UnsupportedDistro(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=arch\n")
 
-	cfg := &Config{Linux: &LinuxConfig{Packages: []string{"vim"}}}
+	cfg := &Config{Apt: &AptConfig{Packages: []string{"vim"}}}
 	s := NewSettle(cfg, "/tmp/config.toml", false, false)
 
 	err := s.Update()
@@ -1237,10 +1237,10 @@ func TestUpdate_WithPackageSection(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 
-[[linux.package]]
+[[apt.post_hook]]
 name = "pipewire"
 `)
 
@@ -1267,7 +1267,7 @@ func TestUpdate_Verbose(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 
@@ -1307,7 +1307,7 @@ func TestList_Packages(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim", "curl"]
 `)
 
@@ -1405,7 +1405,7 @@ func TestList_PackagesUpgradeAvailable(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 
@@ -1431,7 +1431,7 @@ func TestList_UnknownPackage(t *testing.T) {
 	mockAvailableVersion(map[string]string{})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["badpkg"]
 `)
 
@@ -1459,7 +1459,7 @@ func TestList_InstalledVersionUnknown(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 
@@ -1489,7 +1489,7 @@ func TestList_WithStateVersionDiff(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 	// State has old version
@@ -1523,10 +1523,10 @@ func TestList_PackagesWithPackageSection(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 
-[[linux.package]]
+[[apt.post_hook]]
 name = "pipewire"
 `)
 
@@ -1595,7 +1595,7 @@ func TestSyncState(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 
@@ -1621,7 +1621,7 @@ func TestSyncState_Verbose(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 
@@ -1636,7 +1636,7 @@ packages = ["vim"]
 	assertContains(t, out, "State saved to")
 }
 
-func TestSyncState_NoLinux(t *testing.T) {
+func TestSyncState_NoApt(t *testing.T) {
 	saveMocks(t)
 	mockInstalledVersion(map[string]string{})
 
@@ -1658,7 +1658,7 @@ func TestSyncState_LoadError(t *testing.T) {
 	lockPath := filepath.Join(dir, "lockfile.json")
 	os.WriteFile(lockPath, []byte("not json{{{"), 0o644)
 
-	cfg := &Config{Linux: &LinuxConfig{Packages: []string{"vim"}}}
+	cfg := &Config{Apt: &AptConfig{Packages: []string{"vim"}}}
 	s := NewSettle(cfg, configPath, false, false)
 
 	err := s.syncState()
@@ -1676,7 +1676,7 @@ func TestSyncState_SaveError(t *testing.T) {
 	configPath := filepath.Join(dir, "subdir", "config.toml")
 	// Don't create the subdir — save will fail
 
-	cfg := &Config{Linux: &LinuxConfig{Packages: []string{"vim"}}}
+	cfg := &Config{Apt: &AptConfig{Packages: []string{"vim"}}}
 	s := NewSettle(cfg, configPath, false, false)
 
 	err := s.syncState()
@@ -1735,7 +1735,7 @@ func TestApply_SyncStateError(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
 	os.WriteFile(configPath, []byte(`
-[linux]
+[apt]
 packages = ["vim"]
 `), 0o644)
 
@@ -1759,7 +1759,7 @@ func TestApply_CheckInstalledError(t *testing.T) {
 	writeOsRelease(t, "ID=debian\n")
 
 	// The CheckInstalled method currently swallows errors from IsInstalled.
-	// To trigger the error path in applyLinux (line 456), we'd need
+	// To trigger the error path in applyApt (line 456), we'd need
 	// CheckInstalled to fail, but it catches errors internally.
 	// This is covered by the fact that dpkg-query can fail.
 	// Let's test the install failure path instead.
@@ -1778,7 +1778,7 @@ func TestApply_CheckInstalledError(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 
@@ -1818,9 +1818,9 @@ func TestApply_PostInstallError(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 
-[[linux.package]]
+[[apt.post_hook]]
 name = "pipewire"
 post_install = "failing-command"
 `)
@@ -1855,7 +1855,7 @@ func TestApply_RemoveError(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"},"git":{"version":"2.40.0","installed_at":"2024-01-01T00:00:00Z"}}}`)
@@ -1886,7 +1886,7 @@ func TestInstall_CheckInstalledError(t *testing.T) {
 	mockInstalledVersion(map[string]string{})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = []
 `)
 
@@ -1914,7 +1914,7 @@ func TestInstall_InstallFailure(t *testing.T) {
 	}
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = []
 `)
 
@@ -1943,7 +1943,7 @@ func TestInstall_LockfileLoadVerbose(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
 	os.WriteFile(configPath, []byte(`
-[linux]
+[apt]
 packages = ["vim"]
 `), 0o644)
 	// Corrupt lockfile
@@ -1975,7 +1975,7 @@ func TestInstall_VerbosePackageAlreadyInConfig(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 
@@ -2005,7 +2005,7 @@ func TestRemove_RemoveFailure(t *testing.T) {
 	}
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 
@@ -2034,7 +2034,7 @@ func TestRemove_LockfileLoadVerbose(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
 	os.WriteFile(configPath, []byte(`
-[linux]
+[apt]
 packages = ["vim"]
 `), 0o644)
 	// Corrupt lockfile
@@ -2062,7 +2062,7 @@ func TestUpdate_RefreshError(t *testing.T) {
 	}
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 
@@ -2093,7 +2093,7 @@ func TestUpdate_UpgradeError(t *testing.T) {
 	}
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 
@@ -2122,7 +2122,7 @@ func TestUpdate_LockfileLoadVerbose(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
 	os.WriteFile(configPath, []byte(`
-[linux]
+[apt]
 packages = ["vim"]
 `), 0o644)
 	// Corrupt lockfile
@@ -2139,14 +2139,14 @@ packages = ["vim"]
 	assertContains(t, out, "could not load lockfile")
 }
 
-// --- listLinux error paths ---
+// --- listApt error paths ---
 
-func TestListLinux_EmptyPackages(t *testing.T) {
+func TestListApt_EmptyPackages(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = []
 `)
 
@@ -2162,7 +2162,7 @@ packages = []
 	assertNotContains(t, out, "Packages:")
 }
 
-func TestListLinux_VerboseStateLoadError(t *testing.T) {
+func TestListApt_VerboseStateLoadError(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
@@ -2179,7 +2179,7 @@ func TestListLinux_VerboseStateLoadError(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
 	os.WriteFile(configPath, []byte(`
-[linux]
+[apt]
 packages = ["vim"]
 `), 0o644)
 	// Corrupt lockfile
@@ -2342,7 +2342,7 @@ func TestApply_LockfileLoadVerbose(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
 	os.WriteFile(configPath, []byte(`
-[linux]
+[apt]
 packages = ["vim"]
 `), 0o644)
 	// No lockfile — verbose should say "no lockfile found"
@@ -2378,7 +2378,7 @@ func TestApply_InstallLockfileSaveWarning(t *testing.T) {
 
 	// Use a path where lockfile can't be saved
 	configPath := "/nonexistent/dir/config.toml"
-	cfg := &Config{Linux: &LinuxConfig{Packages: []string{"vim"}}}
+	cfg := &Config{Apt: &AptConfig{Packages: []string{"vim"}}}
 	s := NewSettle(cfg, configPath, false, false)
 
 	out := captureOutput(t, func() {
@@ -2406,7 +2406,7 @@ func TestApply_VersionUpdateLockfileSaveWarning(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
 	os.WriteFile(configPath, []byte(`
-[linux]
+[apt]
 packages = ["vim"]
 `), 0o644)
 	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
@@ -2447,7 +2447,7 @@ func TestApply_RemoveLockfileSaveWarning(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
 	os.WriteFile(configPath, []byte(`
-[linux]
+[apt]
 packages = ["vim"]
 `), 0o644)
 	// Lockfile has vim AND git (git not in config, will be removed)
@@ -2512,7 +2512,7 @@ func TestRemove_LockfileSaveWarning(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
 	os.WriteFile(configPath, []byte(`
-[linux]
+[apt]
 packages = ["vim"]
 `), 0o644)
 	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
@@ -2546,7 +2546,7 @@ func TestUpdate_LockfileSaveWarning(t *testing.T) {
 		"vim": "9.0.1",
 	})
 
-	cfg := &Config{Linux: &LinuxConfig{Packages: []string{"vim"}}}
+	cfg := &Config{Apt: &AptConfig{Packages: []string{"vim"}}}
 	s := NewSettle(cfg, "/nonexistent/dir/config.toml", false, false)
 
 	out := captureOutput(t, func() {
@@ -2576,7 +2576,7 @@ func TestApply_GetInstalledVersionErrorContinue(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
@@ -2610,7 +2610,7 @@ func TestApply_VerboseLockfileNotFound(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
 	os.WriteFile(configPath, []byte(`
-[linux]
+[apt]
 packages = ["vim"]
 `), 0o644)
 	// Write a corrupt lockfile so Load() returns error
@@ -2644,7 +2644,7 @@ func TestApply_VerbosePinnedVersionDryRun(t *testing.T) {
 	})
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["curl"]
 `)
 	writeLockfile(t, configPath, `{"packages":{"curl":{"version":"7.88.0","installed_at":"2024-01-01T00:00:00Z"}}}`)
@@ -2662,21 +2662,21 @@ packages = ["curl"]
 
 // --- List error propagation ---
 
-func TestList_ListLinuxError(t *testing.T) {
+func TestList_ListAptError(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=arch\n") // unsupported distro
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 
 	_ = configPath
 }
 
-// --- Apply with both linux and dotfiles ---
+// --- Apply with both apt and dotfiles ---
 
-func TestApply_BothLinuxAndDotfiles(t *testing.T) {
+func TestApply_BothAptAndDotfiles(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
@@ -2697,7 +2697,7 @@ func TestApply_BothLinuxAndDotfiles(t *testing.T) {
 	destFile := filepath.Join(dir, ".vimrc")
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 
 [dotfiles]
@@ -2768,7 +2768,7 @@ func TestInstall_GetInstalledVersionError(t *testing.T) {
 	}
 
 	configPath := withTempConfig(t, `
-[linux]
+[apt]
 packages = ["vim"]
 `)
 	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)

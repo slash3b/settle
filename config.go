@@ -9,14 +9,15 @@ import (
 
 const defaultConfigPath = "config.toml"
 
-type Package struct {
+type PostHook struct {
 	Name        string `toml:"name"`
 	PostInstall string `toml:"post_install"`
 }
 
-type LinuxConfig struct {
-	Packages []string  `toml:"packages"`
-	Package  []Package `toml:"package"`
+type AptConfig struct {
+	Packages []string `toml:"packages"`
+	//PostHooks is basically anything you want to run after package installation.
+	PostHooks []PostHook `toml:"post_hook"`
 }
 
 type Dotfile struct {
@@ -31,7 +32,7 @@ type DotfilesConfig struct {
 }
 
 type Config struct {
-	Linux    *LinuxConfig    `toml:"linux"`
+	Apt      *AptConfig      `toml:"apt"`
 	Dotfiles *DotfilesConfig `toml:"dotfiles"`
 	// Future managers:
 	// Cargo  *CargoConfig  `toml:"cargo"`
@@ -49,6 +50,7 @@ func loadConfig(path string) (*Config, error) {
 	}
 
 	var cfg Config
+
 	err = toml.Unmarshal(data, &cfg)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing TOML: %w", err)

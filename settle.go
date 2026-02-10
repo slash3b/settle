@@ -34,11 +34,11 @@ func (s *Settle) Apply() error {
 
 	managersFound := 0
 
-	// Handle Linux packages
-	if s.config.Linux != nil {
+	// Handle apt packages
+	if s.config.Apt != nil {
 		managersFound++
-		if err := s.applyLinux(); err != nil {
-			return fmt.Errorf("error handling Linux packages: %w", err)
+		if err := s.applyApt(); err != nil {
+			return fmt.Errorf("error handling apt packages: %w", err)
 		}
 	}
 
@@ -81,11 +81,11 @@ func (s *Settle) Install(packages []string) error {
 
 	// Check which packages are already in config
 	inConfig := make(map[string]bool)
-	if s.config.Linux != nil {
-		for _, pkg := range s.config.Linux.Packages {
+	if s.config.Apt != nil {
+		for _, pkg := range s.config.Apt.Packages {
 			inConfig[pkg] = true
 		}
-		for _, pkg := range s.config.Linux.Package {
+		for _, pkg := range s.config.Apt.PostHooks {
 			inConfig[pkg.Name] = true
 		}
 	}
@@ -147,9 +147,9 @@ func (s *Settle) Install(packages []string) error {
 		return nil
 	}
 
-	// Ensure linux section exists
-	if s.config.Linux == nil {
-		s.config.Linux = &LinuxConfig{
+	// Ensure apt section exists
+	if s.config.Apt == nil {
+		s.config.Apt = &AptConfig{
 			Packages: []string{},
 		}
 	}
@@ -215,17 +215,17 @@ func (s *Settle) Remove(packages []string) error {
 		return fmt.Errorf("no packages specified")
 	}
 
-	if s.config.Linux == nil {
+	if s.config.Apt == nil {
 		fmt.Println("No packages configured")
 		return nil
 	}
 
 	// Check which packages are in config
 	inConfig := make(map[string]bool)
-	for _, pkg := range s.config.Linux.Packages {
+	for _, pkg := range s.config.Apt.Packages {
 		inConfig[pkg] = true
 	}
-	for _, pkg := range s.config.Linux.Package {
+	for _, pkg := range s.config.Apt.PostHooks {
 		inConfig[pkg.Name] = true
 	}
 
@@ -320,7 +320,7 @@ func (s *Settle) Remove(packages []string) error {
 
 // Update upgrades all managed packages to their latest versions
 func (s *Settle) Update() error {
-	if s.config.Linux == nil {
+	if s.config.Apt == nil {
 		fmt.Println("No packages configured")
 		return nil
 	}
@@ -334,8 +334,8 @@ func (s *Settle) Update() error {
 
 	// Collect all packages from config
 	var allPackages []string
-	allPackages = append(allPackages, s.config.Linux.Packages...)
-	for _, pkg := range s.config.Linux.Package {
+	allPackages = append(allPackages, s.config.Apt.Packages...)
+	for _, pkg := range s.config.Apt.PostHooks {
 		allPackages = append(allPackages, pkg.Name)
 	}
 
@@ -393,9 +393,9 @@ func (s *Settle) syncState() error {
 
 	// Collect all packages
 	var allPackages []string
-	if s.config.Linux != nil {
-		allPackages = append(allPackages, s.config.Linux.Packages...)
-		for _, pkg := range s.config.Linux.Package {
+	if s.config.Apt != nil {
+		allPackages = append(allPackages, s.config.Apt.Packages...)
+		for _, pkg := range s.config.Apt.PostHooks {
 			allPackages = append(allPackages, pkg.Name)
 		}
 	}
@@ -415,8 +415,8 @@ func (s *Settle) syncState() error {
 	return nil
 }
 
-// applyLinux handles Linux package installation
-func (s *Settle) applyLinux() error {
+// applyApt handles apt package installation
+func (s *Settle) applyApt() error {
 	distro := DetectDistro()
 	if !distro.IsDebianBased() {
 		return fmt.Errorf("unsupported distribution: %s (only Debian-based distros are supported)", distro)
@@ -427,7 +427,7 @@ func (s *Settle) applyLinux() error {
 	}
 
 	manager := NewDebianManager(s.verbose)
-	linuxCfg := s.config.Linux
+	aptCfg := s.config.Apt
 
 	// Load lockfile for version pinning
 	lockfile := NewStateManager(s.configPath)
@@ -436,20 +436,20 @@ func (s *Settle) applyLinux() error {
 	}
 
 	// Collect all packages
-	allPackages := make([]string, 0, len(linuxCfg.Packages)+len(linuxCfg.Package))
-	allPackages = append(allPackages, linuxCfg.Packages...)
+	allPackages := make([]string, 0, len(aptCfg.Packages)+len(aptCfg.PostHooks))
+	allPackages = append(allPackages, aptCfg.Packages...)
 
 	// Add packages with post-install hooks
-	for _, pkg := range linuxCfg.Package {
+	for _, pkg := range aptCfg.PostHooks {
 		allPackages = append(allPackages, pkg.Name)
 	}
 
 	if len(allPackages) == 0 {
-		fmt.Println("No Debian packages configured")
+		fmt.Println("No apt packages configured")
 		return nil
 	}
 
-	fmt.Printf("Checking %d Debian packages...\n", len(allPackages))
+	fmt.Printf("Checking %d apt packages...\n", len(allPackages))
 
 	// Check which packages are not installed
 	missingPackages, err := manager.CheckInstalled(allPackages)
@@ -539,7 +539,7 @@ func (s *Settle) applyLinux() error {
 				}
 			}
 			// Show post-install hooks that would run
-			for _, pkg := range linuxCfg.Package {
+			for _, pkg := range aptCfg.PostHooks {
 				if pkg.PostInstall != "" && missingSet[pkg.Name] {
 					fmt.Printf("\n[dry-run] Would run post-install for %s\n", pkg.Name)
 				}
@@ -550,7 +550,7 @@ func (s *Settle) applyLinux() error {
 			}
 
 			// Run post-install scripts ONLY for packages that were just installed
-			for _, pkg := range linuxCfg.Package {
+			for _, pkg := range aptCfg.PostHooks {
 				if pkg.PostInstall != "" && missingSet[pkg.Name] {
 					if err := manager.RunPostInstall(pkg.Name, pkg.PostInstall); err != nil {
 						return fmt.Errorf("error running post-install for %s: %w", pkg.Name, err)
@@ -633,9 +633,9 @@ func (s *Settle) applyLinux() error {
 
 // List shows the status of all packages and dotfiles
 func (s *Settle) List() error {
-	// List Linux packages
-	if s.config.Linux != nil {
-		if err := s.listLinux(); err != nil {
+	// List apt packages
+	if s.config.Apt != nil {
+		if err := s.listApt(); err != nil {
 			return err
 		}
 	}
@@ -659,10 +659,10 @@ type packageInfo struct {
 	notFound  bool
 }
 
-// listLinux lists all Linux packages and their status
-func (s *Settle) listLinux() error {
+// listApt lists all apt packages and their status
+func (s *Settle) listApt() error {
 	manager := NewDebianManager(s.verbose)
-	cfg := s.config.Linux
+	cfg := s.config.Apt
 
 	// Load state file for version comparison
 	stateMgr := NewStateManager(s.configPath)
@@ -673,9 +673,9 @@ func (s *Settle) listLinux() error {
 	}
 
 	// Collect all packages
-	allPackages := make([]string, 0, len(cfg.Packages)+len(cfg.Package))
+	allPackages := make([]string, 0, len(cfg.Packages)+len(cfg.PostHooks))
 	allPackages = append(allPackages, cfg.Packages...)
-	for _, pkg := range cfg.Package {
+	for _, pkg := range cfg.PostHooks {
 		allPackages = append(allPackages, pkg.Name)
 	}
 
