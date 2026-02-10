@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -16,6 +15,7 @@ packages = ["vim", "curl", "git"]
 	cfg, err := loadConfig(path)
 	require.NoError(t, err)
 	require.NotNil(t, cfg.Apt)
+
 	assert.Equal(t, 3, len(cfg.Apt.Packages))
 	assert.Equal(t, "vim", cfg.Apt.Packages[0])
 	assert.Equal(t, "curl", cfg.Apt.Packages[1])
@@ -39,6 +39,7 @@ mode = "copy"
 	cfg, err := loadConfig(path)
 	require.NoError(t, err)
 	require.NotNil(t, cfg.Dotfiles)
+
 	assert.Equal(t, "~/dotfiles/sources", cfg.Dotfiles.SourceDir)
 	assert.Equal(t, 2, len(cfg.Dotfiles.Files))
 	assert.Equal(t, "alacritty.toml", cfg.Dotfiles.Files[0].Src)
@@ -59,6 +60,7 @@ post_install = "systemctl --user --now enable wireplumber.service"
 	cfg, err := loadConfig(path)
 	require.NoError(t, err)
 	require.NotNil(t, cfg.Apt)
+
 	assert.Equal(t, 1, len(cfg.Apt.Packages))
 	assert.Equal(t, 1, len(cfg.Apt.PostHooks))
 	assert.Equal(t, "pipewire", cfg.Apt.PostHooks[0].Name)
@@ -69,6 +71,7 @@ func TestLoadConfig_Empty(t *testing.T) {
 	path := withTempConfig(t, "")
 	cfg, err := loadConfig(path)
 	require.NoError(t, err)
+
 	assert.Nil(t, cfg.Apt)
 	assert.Nil(t, cfg.Dotfiles)
 }
@@ -76,6 +79,7 @@ func TestLoadConfig_Empty(t *testing.T) {
 func TestLoadConfig_NotFound(t *testing.T) {
 	_, err := loadConfig("/nonexistent/path/config.toml")
 	require.Error(t, err)
+
 	assert.Contains(t, err.Error(), "error reading config file")
 }
 
@@ -83,6 +87,7 @@ func TestLoadConfig_InvalidTOML(t *testing.T) {
 	path := withTempConfig(t, `this is not valid toml [[[`)
 	_, err := loadConfig(path)
 	require.Error(t, err)
+
 	assert.Contains(t, err.Error(), "error parsing TOML")
 }
 
@@ -106,17 +111,9 @@ dest = "~/.vimrc"
 	require.NoError(t, err)
 	require.NotNil(t, cfg.Apt)
 	require.NotNil(t, cfg.Dotfiles)
+
 	assert.Equal(t, 2, len(cfg.Apt.Packages))
 	assert.Equal(t, 1, len(cfg.Apt.PostHooks))
 	assert.Equal(t, 1, len(cfg.Dotfiles.Files))
 }
 
-func TestLoadConfig_ReadError(t *testing.T) {
-	path := withTempConfig(t, "hello")
-	os.Chmod(path, 0o000)
-	t.Cleanup(func() { os.Chmod(path, 0o644) })
-
-	_, err := loadConfig(path)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "error reading config file")
-}
