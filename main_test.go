@@ -2,6 +2,8 @@ package main
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestPrintVersion(t *testing.T) {
@@ -9,9 +11,9 @@ func TestPrintVersion(t *testing.T) {
 		printVersion()
 	})
 
-	assertContains(t, out, "settle")
-	assertContains(t, out, Version)
-	assertContains(t, out, "binary:")
+	assert.Contains(t, out, "settle")
+	assert.Contains(t, out, Version)
+	assert.Contains(t, out, "binary:")
 }
 
 func TestPrintUsage(t *testing.T) {
@@ -19,13 +21,13 @@ func TestPrintUsage(t *testing.T) {
 		printUsage()
 	})
 
-	assertContains(t, out, "Usage: settle")
-	assertContains(t, out, "Commands:")
-	assertContains(t, out, "apply")
-	assertContains(t, out, "install")
-	assertContains(t, out, "remove")
-	assertContains(t, out, "update")
-	assertContains(t, out, "list")
-	assertContains(t, out, "version")
-	assertContains(t, out, "Flags:")
+	assert.Contains(t, out, "Usage: settle")
+	assert.Contains(t, out, "Commands:")
+	assert.Contains(t, out, "apply")
+	assert.Contains(t, out, "install")
+	assert.Contains(t, out, "remove")
+	assert.Contains(t, out, "update")
+	assert.Contains(t, out, "list")
+	assert.Contains(t, out, "version")
+	assert.Contains(t, out, "Flags:")
 }

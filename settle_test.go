@@ -6,6 +6,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // --- Apply tests ---
@@ -18,8 +21,8 @@ func TestApply_NoConfig(t *testing.T) {
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertError(t, err)
-		assertContains(t, err.Error(), "no packages or dotfiles configured")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no packages or dotfiles configured")
 	})
 	_ = out
 }
@@ -51,11 +54,11 @@ packages = ["vim", "git"]
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "All packages already installed")
-	assertContains(t, out, "Done!")
+	assert.Contains(t, out, "All packages already installed")
+	assert.Contains(t, out, "Done!")
 }
 
 func TestApply_InstallsMissing(t *testing.T) {
@@ -93,11 +96,11 @@ packages = ["vim", "curl"]
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Need to install: 1")
-	assertContains(t, out, "Done!")
+	assert.Contains(t, out, "Need to install: 1")
+	assert.Contains(t, out, "Done!")
 }
 
 func TestApply_PinsToLockfileForMissing(t *testing.T) {
@@ -131,10 +134,10 @@ packages = ["curl"]
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Done!")
+	assert.Contains(t, out, "Done!")
 }
 
 func TestApply_UpdatesLockfileOnVersionMismatch(t *testing.T) {
@@ -163,11 +166,11 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Lockfile updated: 1")
-	assertContains(t, out, "Done!")
+	assert.Contains(t, out, "Lockfile updated: 1")
+	assert.Contains(t, out, "Done!")
 }
 
 func TestApply_RemovesUntracked(t *testing.T) {
@@ -200,11 +203,11 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Removing 1 packages not in config")
-	assertContains(t, out, "Done!")
+	assert.Contains(t, out, "Removing 1 packages not in config")
+	assert.Contains(t, out, "Done!")
 }
 
 func TestApply_DryRun(t *testing.T) {
@@ -216,7 +219,7 @@ func TestApply_DryRun(t *testing.T) {
 		if name == "dpkg-query" {
 			return exec.Command("false")
 		}
-		t.Fatal("should not run apt-get in dry-run mode")
+		require.Fail(t, "should not run apt-get in dry-run mode")
 		return nil
 	}
 	mockInstalledVersion(map[string]string{})
@@ -234,11 +237,11 @@ packages = ["curl"]
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "[dry-run")
-	assertContains(t, out, "Done!")
+	assert.Contains(t, out, "[dry-run")
+	assert.Contains(t, out, "Done!")
 }
 
 func TestApply_SkipsUnknownPackages(t *testing.T) {
@@ -265,11 +268,11 @@ packages = ["badpkg"]
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Skipping 1 unknown packages")
-	assertContains(t, out, "badpkg")
+	assert.Contains(t, out, "Skipping 1 unknown packages")
+	assert.Contains(t, out, "badpkg")
 }
 
 func TestApply_UnsupportedDistro(t *testing.T) {
@@ -286,8 +289,8 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertError(t, err)
-		assertContains(t, err.Error(), "unsupported distribution")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported distribution")
 	})
 	_ = out
 }
@@ -317,11 +320,11 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Detected distribution: debian")
-	assertContains(t, out, "Lockfile updated:")
+	assert.Contains(t, out, "Detected distribution: debian")
+	assert.Contains(t, out, "Lockfile updated:")
 }
 
 func TestApply_NoPackagesConfigured(t *testing.T) {
@@ -338,10 +341,10 @@ packages = []
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "No apt packages configured")
+	assert.Contains(t, out, "No apt packages configured")
 }
 
 func TestApply_PostInstallHooks(t *testing.T) {
@@ -376,11 +379,11 @@ post_install = "echo post-install-ran"
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Running post-install for pipewire")
-	assertContains(t, out, "Done!")
+	assert.Contains(t, out, "Running post-install for pipewire")
+	assert.Contains(t, out, "Done!")
 }
 
 func TestApply_DryRunWithPostInstall(t *testing.T) {
@@ -391,7 +394,7 @@ func TestApply_DryRunWithPostInstall(t *testing.T) {
 		if name == "dpkg-query" {
 			return exec.Command("false")
 		}
-		t.Fatal("should not run commands in dry-run mode")
+		require.Fail(t, "should not run commands in dry-run mode")
 		return nil
 	}
 	mockAvailableVersion(map[string]string{
@@ -411,11 +414,11 @@ post_install = "echo test"
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "[dry-run] Would install")
-	assertContains(t, out, "[dry-run] Would run post-install for pipewire")
+	assert.Contains(t, out, "[dry-run] Would install")
+	assert.Contains(t, out, "[dry-run] Would run post-install for pipewire")
 }
 
 func TestApply_DryRunRemovesUntracked(t *testing.T) {
@@ -443,11 +446,11 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "[dry-run] Would remove")
-	assertContains(t, out, "git")
+	assert.Contains(t, out, "[dry-run] Would remove")
+	assert.Contains(t, out, "git")
 }
 
 // --- Dotfiles Apply tests ---
@@ -478,16 +481,16 @@ dest = "`+destFile+`"
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Created 1 links")
-	assertContains(t, out, "Done!")
+	assert.Contains(t, out, "Created 1 links")
+	assert.Contains(t, out, "Done!")
 
 	// Verify symlink exists
 	target, err := os.Readlink(destFile)
-	assertNoError(t, err)
-	assertEqualStr(t, target, srcFile)
+	require.NoError(t, err)
+	assert.Equal(t, srcFile, target)
 }
 
 func TestApply_DotfilesEmpty(t *testing.T) {
@@ -503,10 +506,10 @@ source_dir = "/tmp"
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "No dotfiles configured")
+	assert.Contains(t, out, "No dotfiles configured")
 }
 
 func TestApply_DotfilesDryRun(t *testing.T) {
@@ -535,11 +538,11 @@ dest = "`+destFile+`"
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "[dry-run] Would link")
-	assertContains(t, out, "[dry-run] Would create 1 links")
+	assert.Contains(t, out, "[dry-run] Would link")
+	assert.Contains(t, out, "[dry-run] Would create 1 links")
 }
 
 func TestApply_DotfilesVerbose(t *testing.T) {
@@ -568,10 +571,10 @@ dest = "`+destFile+`"
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Linked:")
+	assert.Contains(t, out, "Linked:")
 }
 
 func TestApply_DotfilesWithErrors(t *testing.T) {
@@ -595,10 +598,10 @@ dest = "`+filepath.Join(dir, ".vimrc")+`"
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err) // Apply doesn't return error for individual file errors
+		require.NoError(t, err) // Apply doesn't return error for individual file errors
 	})
 
-	assertContains(t, out, "Errors:")
+	assert.Contains(t, out, "Errors:")
 }
 
 // --- Install tests ---
@@ -627,10 +630,10 @@ packages = []
 
 	out := captureOutput(t, func() {
 		err := s.Install([]string{"curl"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Installing 1 packages")
+	assert.Contains(t, out, "Installing 1 packages")
 }
 
 func TestInstall_AlreadyInstalledAndInConfig(t *testing.T) {
@@ -655,10 +658,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Install([]string{"vim"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "All packages already in config and installed")
+	assert.Contains(t, out, "All packages already in config and installed")
 }
 
 func TestInstall_UpdatesLockfileOnMismatch(t *testing.T) {
@@ -683,10 +686,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Install([]string{"vim"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "All packages already in config and installed")
+	assert.Contains(t, out, "All packages already in config and installed")
 }
 
 func TestInstall_DryRun(t *testing.T) {
@@ -697,7 +700,7 @@ func TestInstall_DryRun(t *testing.T) {
 		if name == "dpkg-query" {
 			return exec.Command("false")
 		}
-		t.Fatal("should not run apt-get in dry-run mode")
+		require.Fail(t, "should not run apt-get in dry-run mode")
 		return nil
 	}
 
@@ -711,10 +714,10 @@ packages = []
 
 	out := captureOutput(t, func() {
 		err := s.Install([]string{"curl"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "[dry-run] Would install")
+	assert.Contains(t, out, "[dry-run] Would install")
 }
 
 func TestInstall_NoPackagesSpecified(t *testing.T) {
@@ -722,8 +725,8 @@ func TestInstall_NoPackagesSpecified(t *testing.T) {
 	s := NewSettle(cfg, "/tmp/config.toml", false, false)
 
 	err := s.Install(nil)
-	assertError(t, err)
-	assertContains(t, err.Error(), "no packages specified")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no packages specified")
 }
 
 func TestInstall_UnsupportedDistro(t *testing.T) {
@@ -734,8 +737,8 @@ func TestInstall_UnsupportedDistro(t *testing.T) {
 	s := NewSettle(cfg, "/tmp/config.toml", false, false)
 
 	err := s.Install([]string{"vim"})
-	assertError(t, err)
-	assertContains(t, err.Error(), "unsupported distribution")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported distribution")
 }
 
 func TestInstall_VerboseOutput(t *testing.T) {
@@ -760,10 +763,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Install([]string{"vim"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Lockfile updated:")
+	assert.Contains(t, out, "Lockfile updated:")
 }
 
 func TestInstall_NotInConfigShowsReminder(t *testing.T) {
@@ -790,11 +793,11 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Install([]string{"curl"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "add to your config.toml")
-	assertContains(t, out, "curl")
+	assert.Contains(t, out, "add to your config.toml")
+	assert.Contains(t, out, "curl")
 }
 
 func TestInstall_CreatesAptSection(t *testing.T) {
@@ -819,10 +822,10 @@ func TestInstall_CreatesAptSection(t *testing.T) {
 
 	out := captureOutput(t, func() {
 		err := s.Install([]string{"curl"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Installing")
+	assert.Contains(t, out, "Installing")
 }
 
 func TestInstall_AllAlreadyOnSystem(t *testing.T) {
@@ -844,10 +847,10 @@ packages = []
 
 	out := captureOutput(t, func() {
 		err := s.Install([]string{"vim"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "All packages already installed on system")
+	assert.Contains(t, out, "All packages already installed on system")
 }
 
 func TestInstall_PackageInPackageSection(t *testing.T) {
@@ -875,10 +878,10 @@ post_install = "echo test"
 
 	out := captureOutput(t, func() {
 		err := s.Install([]string{"pipewire"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "All packages already in config and installed")
+	assert.Contains(t, out, "All packages already in config and installed")
 }
 
 // --- Remove tests ---
@@ -905,11 +908,11 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Remove([]string{"vim"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Removing 1 packages")
-	assertContains(t, out, "remove from your config.toml")
+	assert.Contains(t, out, "Removing 1 packages")
+	assert.Contains(t, out, "remove from your config.toml")
 }
 
 func TestRemove_NotInstalled(t *testing.T) {
@@ -930,10 +933,10 @@ packages = []
 
 	out := captureOutput(t, func() {
 		err := s.Remove([]string{"nonexistent"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "None of the packages are in config or installed")
+	assert.Contains(t, out, "None of the packages are in config or installed")
 }
 
 func TestRemove_DryRun(t *testing.T) {
@@ -944,7 +947,7 @@ func TestRemove_DryRun(t *testing.T) {
 		if name == "dpkg-query" {
 			return exec.Command("echo", "-n", "install ok installed")
 		}
-		t.Fatal("should not run apt-get in dry-run mode")
+		require.Fail(t, "should not run apt-get in dry-run mode")
 		return nil
 	}
 
@@ -958,10 +961,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Remove([]string{"vim"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "[dry-run] Would uninstall")
+	assert.Contains(t, out, "[dry-run] Would uninstall")
 }
 
 func TestRemove_NoPackagesSpecified(t *testing.T) {
@@ -969,8 +972,8 @@ func TestRemove_NoPackagesSpecified(t *testing.T) {
 	s := NewSettle(cfg, "/tmp/config.toml", false, false)
 
 	err := s.Remove(nil)
-	assertError(t, err)
-	assertContains(t, err.Error(), "no packages specified")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no packages specified")
 }
 
 func TestRemove_NoAptConfig(t *testing.T) {
@@ -979,10 +982,10 @@ func TestRemove_NoAptConfig(t *testing.T) {
 
 	out := captureOutput(t, func() {
 		err := s.Remove([]string{"vim"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "No packages configured")
+	assert.Contains(t, out, "No packages configured")
 }
 
 func TestRemove_UnsupportedDistro(t *testing.T) {
@@ -993,8 +996,8 @@ func TestRemove_UnsupportedDistro(t *testing.T) {
 	s := NewSettle(cfg, "/tmp/config.toml", false, false)
 
 	err := s.Remove([]string{"vim"})
-	assertError(t, err)
-	assertContains(t, err.Error(), "unsupported distribution")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported distribution")
 }
 
 func TestRemove_NotInConfigButInstalled(t *testing.T) {
@@ -1018,10 +1021,10 @@ packages = ["git"]
 
 	out := captureOutput(t, func() {
 		err := s.Remove([]string{"vim"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Removing 1 packages")
+	assert.Contains(t, out, "Removing 1 packages")
 }
 
 func TestRemove_VerboseOutput(t *testing.T) {
@@ -1046,10 +1049,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Remove([]string{"curl"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "not in config")
+	assert.Contains(t, out, "not in config")
 }
 
 func TestRemove_InstalledNotInConfig_NoUninstall(t *testing.T) {
@@ -1073,10 +1076,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Remove([]string{"vim"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "No packages to uninstall")
+	assert.Contains(t, out, "No packages to uninstall")
 }
 
 func TestRemove_DryRunConfigReminder(t *testing.T) {
@@ -1087,7 +1090,7 @@ func TestRemove_DryRunConfigReminder(t *testing.T) {
 		if name == "dpkg-query" {
 			return exec.Command("echo", "-n", "install ok installed")
 		}
-		t.Fatal("should not run apt-get remove in dry-run")
+		require.Fail(t, "should not run apt-get remove in dry-run")
 		return nil
 	}
 
@@ -1101,11 +1104,11 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Remove([]string{"vim"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "[dry-run] Would remind to remove from config")
-	assertContains(t, out, "[dry-run] Would uninstall")
+	assert.Contains(t, out, "[dry-run] Would remind to remove from config")
+	assert.Contains(t, out, "[dry-run] Would uninstall")
 }
 
 func TestRemove_PackageInPackageSection(t *testing.T) {
@@ -1131,10 +1134,10 @@ name = "pipewire"
 
 	out := captureOutput(t, func() {
 		err := s.Remove([]string{"pipewire"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "remove from your config.toml")
+	assert.Contains(t, out, "remove from your config.toml")
 }
 
 // --- Update tests ---
@@ -1160,11 +1163,11 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Update()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Updating 1 managed packages")
-	assertContains(t, out, "Done!")
+	assert.Contains(t, out, "Updating 1 managed packages")
+	assert.Contains(t, out, "Done!")
 }
 
 func TestUpdate_NoPackages(t *testing.T) {
@@ -1173,10 +1176,10 @@ func TestUpdate_NoPackages(t *testing.T) {
 
 	out := captureOutput(t, func() {
 		err := s.Update()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "No packages configured")
+	assert.Contains(t, out, "No packages configured")
 }
 
 func TestUpdate_EmptyPackages(t *testing.T) {
@@ -1185,10 +1188,10 @@ func TestUpdate_EmptyPackages(t *testing.T) {
 
 	out := captureOutput(t, func() {
 		err := s.Update()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "No packages to update")
+	assert.Contains(t, out, "No packages to update")
 }
 
 func TestUpdate_DryRun(t *testing.T) {
@@ -1205,11 +1208,11 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Update()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "[dry-run] Would run: apt-get update")
-	assertContains(t, out, "[dry-run] Would upgrade")
+	assert.Contains(t, out, "[dry-run] Would run: apt-get update")
+	assert.Contains(t, out, "[dry-run] Would upgrade")
 }
 
 func TestUpdate_UnsupportedDistro(t *testing.T) {
@@ -1220,8 +1223,8 @@ func TestUpdate_UnsupportedDistro(t *testing.T) {
 	s := NewSettle(cfg, "/tmp/config.toml", false, false)
 
 	err := s.Update()
-	assertError(t, err)
-	assertContains(t, err.Error(), "unsupported distribution")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported distribution")
 }
 
 func TestUpdate_WithPackageSection(t *testing.T) {
@@ -1249,10 +1252,10 @@ name = "pipewire"
 
 	out := captureOutput(t, func() {
 		err := s.Update()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Updating 2 managed packages")
+	assert.Contains(t, out, "Updating 2 managed packages")
 }
 
 func TestUpdate_Verbose(t *testing.T) {
@@ -1276,10 +1279,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Update()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Updating 1 managed packages")
+	assert.Contains(t, out, "Updating 1 managed packages")
 }
 
 // --- List tests ---
@@ -1316,12 +1319,12 @@ packages = ["vim", "curl"]
 
 	out := captureOutput(t, func() {
 		err := s.List()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Packages:")
-	assertContains(t, out, "vim")
-	assertContains(t, out, "curl")
+	assert.Contains(t, out, "Packages:")
+	assert.Contains(t, out, "vim")
+	assert.Contains(t, out, "curl")
 }
 
 func TestList_Empty(t *testing.T) {
@@ -1330,10 +1333,10 @@ func TestList_Empty(t *testing.T) {
 
 	out := captureOutput(t, func() {
 		err := s.List()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertEqualStr(t, out, "")
+	assert.Equal(t, "", out)
 }
 
 func TestList_Dotfiles(t *testing.T) {
@@ -1363,11 +1366,11 @@ dest = "`+destFile+`"
 
 	out := captureOutput(t, func() {
 		err := s.List()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Dotfiles:")
-	assertContains(t, out, "linked")
+	assert.Contains(t, out, "Dotfiles:")
+	assert.Contains(t, out, "linked")
 }
 
 func TestList_DotfilesEmpty(t *testing.T) {
@@ -1383,11 +1386,11 @@ source_dir = "/tmp"
 
 	out := captureOutput(t, func() {
 		err := s.List()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
 	// No table should be printed for empty dotfiles
-	assertNotContains(t, out, "Dotfiles:")
+	assert.NotContains(t, out, "Dotfiles:")
 }
 
 func TestList_PackagesUpgradeAvailable(t *testing.T) {
@@ -1414,10 +1417,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.List()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "upgrade: 9.0.2")
+	assert.Contains(t, out, "upgrade: 9.0.2")
 }
 
 func TestList_UnknownPackage(t *testing.T) {
@@ -1440,10 +1443,10 @@ packages = ["badpkg"]
 
 	out := captureOutput(t, func() {
 		err := s.List()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "unknown")
+	assert.Contains(t, out, "unknown")
 }
 
 func TestList_InstalledVersionUnknown(t *testing.T) {
@@ -1468,10 +1471,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.List()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "installed (version unknown)")
+	assert.Contains(t, out, "installed (version unknown)")
 }
 
 func TestList_WithStateVersionDiff(t *testing.T) {
@@ -1500,10 +1503,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.List()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "was 9.0.1")
+	assert.Contains(t, out, "was 9.0.1")
 }
 
 func TestList_PackagesWithPackageSection(t *testing.T) {
@@ -1535,11 +1538,11 @@ name = "pipewire"
 
 	out := captureOutput(t, func() {
 		err := s.List()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "pipewire")
-	assertContains(t, out, "vim")
+	assert.Contains(t, out, "pipewire")
+	assert.Contains(t, out, "vim")
 }
 
 func TestList_DotfileStatuses(t *testing.T) {
@@ -1578,11 +1581,11 @@ dest = "`+tmuxDest+`"
 
 	out := captureOutput(t, func() {
 		err := s.List()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "linked")
-	assertContains(t, out, "missing")
+	assert.Contains(t, out, "linked")
+	assert.Contains(t, out, "missing")
 }
 
 // --- syncState tests ---
@@ -1603,14 +1606,14 @@ packages = ["vim"]
 	s := NewSettle(cfg, configPath, false, false)
 
 	err := s.syncState()
-	assertNoError(t, err)
+	require.NoError(t, err)
 
 	// Verify lockfile was written
 	sm := NewStateManager(configPath)
 	sm.Load()
 	v, ok := sm.GetPackageVersion("vim")
-	assertEqualBool(t, ok, true)
-	assertEqualStr(t, v, "9.0.1")
+	assert.Equal(t, true, ok)
+	assert.Equal(t, "9.0.1", v)
 }
 
 func TestSyncState_Verbose(t *testing.T) {
@@ -1630,10 +1633,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.syncState()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "State saved to")
+	assert.Contains(t, out, "State saved to")
 }
 
 func TestSyncState_NoApt(t *testing.T) {
@@ -1646,7 +1649,7 @@ func TestSyncState_NoApt(t *testing.T) {
 	s := NewSettle(cfg, configPath, false, false)
 
 	err := s.syncState()
-	assertNoError(t, err)
+	require.NoError(t, err)
 }
 
 func TestSyncState_LoadError(t *testing.T) {
@@ -1662,7 +1665,7 @@ func TestSyncState_LoadError(t *testing.T) {
 	s := NewSettle(cfg, configPath, false, false)
 
 	err := s.syncState()
-	assertError(t, err)
+	require.Error(t, err)
 }
 
 func TestSyncState_SaveError(t *testing.T) {
@@ -1680,7 +1683,7 @@ func TestSyncState_SaveError(t *testing.T) {
 	s := NewSettle(cfg, configPath, false, false)
 
 	err := s.syncState()
-	assertError(t, err)
+	require.Error(t, err)
 }
 
 // --- Error path tests for Apply ---
@@ -1713,9 +1716,9 @@ dest = "`+destDir+`"
 	// applyDotfiles records errors but doesn't return error
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
-	assertContains(t, out, "Errors:")
+	assert.Contains(t, out, "Errors:")
 }
 
 func TestApply_SyncStateError(t *testing.T) {
@@ -1748,10 +1751,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Warning: failed to sync state")
+	assert.Contains(t, out, "Warning: failed to sync state")
 }
 
 func TestApply_CheckInstalledError(t *testing.T) {
@@ -1787,8 +1790,8 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertError(t, err)
-		assertContains(t, err.Error(), "error installing packages")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "error installing packages")
 	})
 	_ = out
 }
@@ -1830,8 +1833,8 @@ post_install = "failing-command"
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertError(t, err)
-		assertContains(t, err.Error(), "error running post-install")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "error running post-install")
 	})
 	_ = out
 }
@@ -1865,8 +1868,8 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertError(t, err)
-		assertContains(t, err.Error(), "error removing packages")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "error removing packages")
 	})
 	_ = out
 }
@@ -1895,10 +1898,10 @@ packages = []
 
 	out := captureOutput(t, func() {
 		err := s.Install([]string{"vim"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "All packages already installed on system")
+	assert.Contains(t, out, "All packages already installed on system")
 }
 
 func TestInstall_InstallFailure(t *testing.T) {
@@ -1923,8 +1926,8 @@ packages = []
 
 	out := captureOutput(t, func() {
 		err := s.Install([]string{"vim"})
-		assertError(t, err)
-		assertContains(t, err.Error(), "error installing packages")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "error installing packages")
 	})
 	_ = out
 }
@@ -1954,10 +1957,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Install([]string{"vim"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "could not load lockfile")
+	assert.Contains(t, out, "could not load lockfile")
 }
 
 func TestInstall_VerbosePackageAlreadyInConfig(t *testing.T) {
@@ -1984,10 +1987,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Install([]string{"vim"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "already in config")
+	assert.Contains(t, out, "already in config")
 }
 
 // --- Error paths for Remove ---
@@ -2014,8 +2017,8 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Remove([]string{"vim"})
-		assertError(t, err)
-		assertContains(t, err.Error(), "error removing packages")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "error removing packages")
 	})
 	_ = out
 }
@@ -2045,10 +2048,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Remove([]string{"vim"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "could not load lockfile")
+	assert.Contains(t, out, "could not load lockfile")
 }
 
 // --- Error paths for Update ---
@@ -2071,8 +2074,8 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Update()
-		assertError(t, err)
-		assertContains(t, err.Error(), "failed to update package lists")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to update package lists")
 	})
 	_ = out
 }
@@ -2102,8 +2105,8 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Update()
-		assertError(t, err)
-		assertContains(t, err.Error(), "failed to upgrade packages")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to upgrade packages")
 	})
 	_ = out
 }
@@ -2133,10 +2136,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Update()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "could not load lockfile")
+	assert.Contains(t, out, "could not load lockfile")
 }
 
 // --- listApt error paths ---
@@ -2155,11 +2158,11 @@ packages = []
 
 	out := captureOutput(t, func() {
 		err := s.List()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
 	// Should not print packages table for empty list
-	assertNotContains(t, out, "Packages:")
+	assert.NotContains(t, out, "Packages:")
 }
 
 func TestListApt_VerboseStateLoadError(t *testing.T) {
@@ -2190,10 +2193,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.List()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Warning: could not load state")
+	assert.Contains(t, out, "Warning: could not load state")
 }
 
 // --- listDotfiles all status branches ---
@@ -2282,17 +2285,17 @@ dest = "`+missingDest+`"
 
 	out := captureOutput(t, func() {
 		err := s.List()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Dotfiles:")
-	assertContains(t, out, "linked")
-	assertContains(t, out, "wrong target")
-	assertContains(t, out, "file exists")
-	assertContains(t, out, "dir exists")
-	assertContains(t, out, "copied")
-	assertContains(t, out, "outdated")
-	assertContains(t, out, "missing")
+	assert.Contains(t, out, "Dotfiles:")
+	assert.Contains(t, out, "linked")
+	assert.Contains(t, out, "wrong target")
+	assert.Contains(t, out, "file exists")
+	assert.Contains(t, out, "dir exists")
+	assert.Contains(t, out, "copied")
+	assert.Contains(t, out, "outdated")
+	assert.Contains(t, out, "missing")
 }
 
 func TestListDotfiles_ErrorStatus(t *testing.T) {
@@ -2317,10 +2320,10 @@ dest = "`+filepath.Join(dir, ".vimrc")+`"
 
 	out := captureOutput(t, func() {
 		err := s.List()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "error:")
+	assert.Contains(t, out, "error:")
 }
 
 // --- Apply lockfile save/load edge cases ---
@@ -2352,11 +2355,11 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
 	// When there's no lockfile and verbose, the message is printed
-	assertContains(t, out, "Detected distribution: debian")
+	assert.Contains(t, out, "Detected distribution: debian")
 }
 
 func TestApply_InstallLockfileSaveWarning(t *testing.T) {
@@ -2383,10 +2386,10 @@ func TestApply_InstallLockfileSaveWarning(t *testing.T) {
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Warning: failed to update lockfile")
+	assert.Contains(t, out, "Warning: failed to update lockfile")
 }
 
 func TestApply_VersionUpdateLockfileSaveWarning(t *testing.T) {
@@ -2421,10 +2424,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Warning: failed to update lockfile")
+	assert.Contains(t, out, "Warning: failed to update lockfile")
 }
 
 func TestApply_RemoveLockfileSaveWarning(t *testing.T) {
@@ -2463,10 +2466,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Warning: failed to update lockfile")
+	assert.Contains(t, out, "Warning: failed to update lockfile")
 }
 
 // --- Install lockfile save warning ---
@@ -2490,10 +2493,10 @@ func TestInstall_LockfileSaveWarning(t *testing.T) {
 
 	out := captureOutput(t, func() {
 		err := s.Install([]string{"vim"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Warning: failed to update lockfile")
+	assert.Contains(t, out, "Warning: failed to update lockfile")
 }
 
 // --- Remove lockfile save warning ---
@@ -2527,10 +2530,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Remove([]string{"vim"})
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Warning: failed to update lockfile")
+	assert.Contains(t, out, "Warning: failed to update lockfile")
 }
 
 // --- Update lockfile save warning ---
@@ -2551,10 +2554,10 @@ func TestUpdate_LockfileSaveWarning(t *testing.T) {
 
 	out := captureOutput(t, func() {
 		err := s.Update()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Warning: failed to update lockfile")
+	assert.Contains(t, out, "Warning: failed to update lockfile")
 }
 
 // --- Apply verbose lockfile load message ---
@@ -2586,11 +2589,11 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
 	// Should still complete without error
-	assertContains(t, out, "Done!")
+	assert.Contains(t, out, "Done!")
 }
 
 func TestApply_VerboseLockfileNotFound(t *testing.T) {
@@ -2621,10 +2624,10 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "no lockfile found")
+	assert.Contains(t, out, "no lockfile found")
 }
 
 // --- Apply verbose pinned version output ---
@@ -2654,10 +2657,10 @@ packages = ["curl"]
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "pinned")
+	assert.Contains(t, out, "pinned")
 }
 
 // --- List error propagation ---
@@ -2713,11 +2716,11 @@ dest = "`+destFile+`"
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Done!")
-	assertContains(t, out, "Created 1 links")
+	assert.Contains(t, out, "Done!")
+	assert.Contains(t, out, "Created 1 links")
 }
 
 // --- Install GetInstalledVersion error path ---
@@ -2750,10 +2753,10 @@ dest = "`+destFile+`"
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
-		assertNoError(t, err)
+		require.NoError(t, err)
 	})
 
-	assertContains(t, out, "Created 0 links, 1 already correct")
+	assert.Contains(t, out, "Created 0 links, 1 already correct")
 }
 
 func TestInstall_GetInstalledVersionError(t *testing.T) {
@@ -2778,8 +2781,8 @@ packages = ["vim"]
 
 	out := captureOutput(t, func() {
 		err := s.Install([]string{"vim"})
-		assertNoError(t, err) // doesn't fail, just skips version check
+		require.NoError(t, err) // doesn't fail, just skips version check
 	})
 
-	assertContains(t, out, "All packages already in config and installed")
+	assert.Contains(t, out, "All packages already in config and installed")
 }

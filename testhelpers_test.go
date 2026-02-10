@@ -156,66 +156,6 @@ func writeLockfile(t *testing.T, configPath string, content string) {
 	}
 }
 
-// assertContains checks that s contains substr.
-func assertContains(t *testing.T, s, substr string) {
-	t.Helper()
-	if !containsStr(s, substr) {
-		t.Errorf("expected output to contain %q, got:\n%s", substr, s)
-	}
-}
-
-// assertNotContains checks that s does not contain substr.
-func assertNotContains(t *testing.T, s, substr string) {
-	t.Helper()
-	if containsStr(s, substr) {
-		t.Errorf("expected output to NOT contain %q, got:\n%s", substr, s)
-	}
-}
-
-func containsStr(s, substr string) bool {
-	return len(substr) > 0 && len(s) >= len(substr) && bytes.Contains([]byte(s), []byte(substr))
-}
-
-// assertNoError fails if err is non-nil.
-func assertNoError(t *testing.T, err error) {
-	t.Helper()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-// assertError fails if err is nil.
-func assertError(t *testing.T, err error) {
-	t.Helper()
-	if err == nil {
-		t.Fatal("expected an error but got nil")
-	}
-}
-
-// assertEqualStr fails if a != b.
-func assertEqualStr(t *testing.T, got, want string) {
-	t.Helper()
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-// assertEqualInt fails if a != b.
-func assertEqualInt(t *testing.T, got, want int) {
-	t.Helper()
-	if got != want {
-		t.Errorf("got %d, want %d", got, want)
-	}
-}
-
-// assertEqualBool fails if a != b.
-func assertEqualBool(t *testing.T, got, want bool) {
-	t.Helper()
-	if got != want {
-		t.Errorf("got %v, want %v", got, want)
-	}
-}
-
 // mockInstalledVersion installs a mock GetInstalledVersion that returns
 // versions from the given map. Missing keys return an error.
 func mockInstalledVersion(versions map[string]string) {

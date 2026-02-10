@@ -4,13 +4,14 @@ import (
 	"testing"
 
 	"github.com/fatih/color"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestPrintPackageTable_Empty(t *testing.T) {
 	out := captureOutput(t, func() {
 		PrintPackageTable(nil)
 	})
-	assertEqualStr(t, out, "")
+	assert.Equal(t, "", out)
 }
 
 func TestPrintPackageTable_Installed(t *testing.T) {
@@ -22,11 +23,11 @@ func TestPrintPackageTable_Installed(t *testing.T) {
 		PrintPackageTable(pkgs)
 	})
 
-	assertContains(t, out, "Package")
-	assertContains(t, out, "Status")
-	assertContains(t, out, "vim")
-	assertContains(t, out, "curl")
-	assertContains(t, out, "installed")
+	assert.Contains(t, out, "Package")
+	assert.Contains(t, out, "Status")
+	assert.Contains(t, out, "vim")
+	assert.Contains(t, out, "curl")
+	assert.Contains(t, out, "installed")
 }
 
 func TestPrintPackageTable_AllSkipped(t *testing.T) {
@@ -38,9 +39,9 @@ func TestPrintPackageTable_AllSkipped(t *testing.T) {
 		PrintPackageTable(pkgs)
 	})
 
-	assertContains(t, out, "2 packages already installed")
+	assert.Contains(t, out, "2 packages already installed")
 	// Should NOT have the table header since no installed packages
-	assertNotContains(t, out, "Package")
+	assert.NotContains(t, out, "Package")
 }
 
 func TestPrintPackageTable_Mixed(t *testing.T) {
@@ -53,9 +54,9 @@ func TestPrintPackageTable_Mixed(t *testing.T) {
 		PrintPackageTable(pkgs)
 	})
 
-	assertContains(t, out, "2 packages already installed")
-	assertContains(t, out, "vim")
-	assertContains(t, out, "installed")
+	assert.Contains(t, out, "2 packages already installed")
+	assert.Contains(t, out, "vim")
+	assert.Contains(t, out, "installed")
 }
 
 func TestPrintPackageTable_Pinned(t *testing.T) {
@@ -66,15 +67,15 @@ func TestPrintPackageTable_Pinned(t *testing.T) {
 		PrintPackageTable(pkgs)
 	})
 
-	assertContains(t, out, "vim")
-	assertContains(t, out, "pinned")
+	assert.Contains(t, out, "vim")
+	assert.Contains(t, out, "pinned")
 }
 
 func TestPrintListTable_Empty(t *testing.T) {
 	out := captureOutput(t, func() {
 		PrintListTable("Packages", nil)
 	})
-	assertEqualStr(t, out, "")
+	assert.Equal(t, "", out)
 }
 
 func TestPrintListTable_Items(t *testing.T) {
@@ -86,13 +87,13 @@ func TestPrintListTable_Items(t *testing.T) {
 		PrintListTable("Packages", items)
 	})
 
-	assertContains(t, out, "Packages:")
-	assertContains(t, out, "Name")
-	assertContains(t, out, "Status")
-	assertContains(t, out, "vim")
-	assertContains(t, out, "9.0.1")
-	assertContains(t, out, "curl")
-	assertContains(t, out, "missing")
+	assert.Contains(t, out, "Packages:")
+	assert.Contains(t, out, "Name")
+	assert.Contains(t, out, "Status")
+	assert.Contains(t, out, "vim")
+	assert.Contains(t, out, "9.0.1")
+	assert.Contains(t, out, "curl")
+	assert.Contains(t, out, "missing")
 }
 
 func TestPrintListTable_WithColor(t *testing.T) {
@@ -109,7 +110,7 @@ func TestPrintListTable_WithColor(t *testing.T) {
 		PrintListTable("Test", items)
 	})
 
-	assertContains(t, out, "vim")
-	assertContains(t, out, "missing")
-	assertContains(t, out, "curl")
+	assert.Contains(t, out, "vim")
+	assert.Contains(t, out, "missing")
+	assert.Contains(t, out, "curl")
 }

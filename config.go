@@ -16,8 +16,13 @@ type PostHook struct {
 
 type AptConfig struct {
 	Packages []string `toml:"packages"`
-	//PostHooks is basically anything you want to run after package installation.
+	// PostHooks is basically anything you want to run after package installation.
 	PostHooks []PostHook `toml:"post_hook"`
+}
+
+type DotfilesConfig struct {
+	SourceDir string    `toml:"source_dir"`
+	Files     []Dotfile `toml:"file"`
 }
 
 type Dotfile struct {
@@ -26,11 +31,7 @@ type Dotfile struct {
 	Mode string `toml:"mode"` // "link" (default) or "copy"
 }
 
-type DotfilesConfig struct {
-	SourceDir string    `toml:"source_dir"`
-	Files     []Dotfile `toml:"file"`
-}
-
+// Config represents an entire user's config document.
 type Config struct {
 	Apt      *AptConfig      `toml:"apt"`
 	Dotfiles *DotfilesConfig `toml:"dotfiles"`
@@ -40,19 +41,13 @@ type Config struct {
 }
 
 func loadConfig(path string) (*Config, error) {
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		return nil, fmt.Errorf("config file not found: %s\n\nCreate a config.toml file or specify a path with --config", path)
-	}
-
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("error reading config file: %w", err)
 	}
 
 	var cfg Config
-
-	err = toml.Unmarshal(data, &cfg)
-	if err != nil {
+	if err := toml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("error parsing TOML: %w", err)
 	}
 

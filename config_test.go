@@ -2,8 +2,10 @@ package main
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLoadConfig_ValidApt(t *testing.T) {
@@ -12,15 +14,12 @@ func TestLoadConfig_ValidApt(t *testing.T) {
 packages = ["vim", "curl", "git"]
 `)
 	cfg, err := loadConfig(path)
-	assertNoError(t, err)
-
-	if cfg.Apt == nil {
-		t.Fatal("expected Apt config to be non-nil")
-	}
-	assertEqualInt(t, len(cfg.Apt.Packages), 3)
-	assertEqualStr(t, cfg.Apt.Packages[0], "vim")
-	assertEqualStr(t, cfg.Apt.Packages[1], "curl")
-	assertEqualStr(t, cfg.Apt.Packages[2], "git")
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Apt)
+	assert.Equal(t, 3, len(cfg.Apt.Packages))
+	assert.Equal(t, "vim", cfg.Apt.Packages[0])
+	assert.Equal(t, "curl", cfg.Apt.Packages[1])
+	assert.Equal(t, "git", cfg.Apt.Packages[2])
 }
 
 func TestLoadConfig_ValidDotfiles(t *testing.T) {
@@ -38,17 +37,14 @@ dest = "~/.tmux.conf"
 mode = "copy"
 `)
 	cfg, err := loadConfig(path)
-	assertNoError(t, err)
-
-	if cfg.Dotfiles == nil {
-		t.Fatal("expected Dotfiles config to be non-nil")
-	}
-	assertEqualStr(t, cfg.Dotfiles.SourceDir, "~/dotfiles/sources")
-	assertEqualInt(t, len(cfg.Dotfiles.Files), 2)
-	assertEqualStr(t, cfg.Dotfiles.Files[0].Src, "alacritty.toml")
-	assertEqualStr(t, cfg.Dotfiles.Files[0].Dest, "~/.config/alacritty/alacritty.toml")
-	assertEqualStr(t, cfg.Dotfiles.Files[0].Mode, "")
-	assertEqualStr(t, cfg.Dotfiles.Files[1].Mode, "copy")
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Dotfiles)
+	assert.Equal(t, "~/dotfiles/sources", cfg.Dotfiles.SourceDir)
+	assert.Equal(t, 2, len(cfg.Dotfiles.Files))
+	assert.Equal(t, "alacritty.toml", cfg.Dotfiles.Files[0].Src)
+	assert.Equal(t, "~/.config/alacritty/alacritty.toml", cfg.Dotfiles.Files[0].Dest)
+	assert.Equal(t, "", cfg.Dotfiles.Files[0].Mode)
+	assert.Equal(t, "copy", cfg.Dotfiles.Files[1].Mode)
 }
 
 func TestLoadConfig_PackageWithPostInstall(t *testing.T) {
@@ -61,41 +57,33 @@ name = "pipewire"
 post_install = "systemctl --user --now enable wireplumber.service"
 `)
 	cfg, err := loadConfig(path)
-	assertNoError(t, err)
-
-	if cfg.Apt == nil {
-		t.Fatal("expected Apt config to be non-nil")
-	}
-	assertEqualInt(t, len(cfg.Apt.Packages), 1)
-	assertEqualInt(t, len(cfg.Apt.PostHooks), 1)
-	assertEqualStr(t, cfg.Apt.PostHooks[0].Name, "pipewire")
-	assertEqualStr(t, cfg.Apt.PostHooks[0].PostInstall, "systemctl --user --now enable wireplumber.service")
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Apt)
+	assert.Equal(t, 1, len(cfg.Apt.Packages))
+	assert.Equal(t, 1, len(cfg.Apt.PostHooks))
+	assert.Equal(t, "pipewire", cfg.Apt.PostHooks[0].Name)
+	assert.Equal(t, "systemctl --user --now enable wireplumber.service", cfg.Apt.PostHooks[0].PostInstall)
 }
 
 func TestLoadConfig_Empty(t *testing.T) {
 	path := withTempConfig(t, "")
 	cfg, err := loadConfig(path)
-	assertNoError(t, err)
-
-	if cfg.Apt != nil {
-		t.Error("expected Apt config to be nil for empty config")
-	}
-	if cfg.Dotfiles != nil {
-		t.Error("expected Dotfiles config to be nil for empty config")
-	}
+	require.NoError(t, err)
+	assert.Nil(t, cfg.Apt)
+	assert.Nil(t, cfg.Dotfiles)
 }
 
 func TestLoadConfig_NotFound(t *testing.T) {
 	_, err := loadConfig("/nonexistent/path/config.toml")
-	assertError(t, err)
-	assertContains(t, err.Error(), "config file not found")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "error reading config file")
 }
 
 func TestLoadConfig_InvalidTOML(t *testing.T) {
 	path := withTempConfig(t, `this is not valid toml [[[`)
 	_, err := loadConfig(path)
-	assertError(t, err)
-	assertContains(t, err.Error(), "error parsing TOML")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "error parsing TOML")
 }
 
 func TestLoadConfig_FullConfig(t *testing.T) {
@@ -115,33 +103,20 @@ src = "vimrc"
 dest = "~/.vimrc"
 `)
 	cfg, err := loadConfig(path)
-	assertNoError(t, err)
-
-	if cfg.Apt == nil {
-		t.Fatal("expected Apt config")
-	}
-	if cfg.Dotfiles == nil {
-		t.Fatal("expected Dotfiles config")
-	}
-	assertEqualInt(t, len(cfg.Apt.Packages), 2)
-	assertEqualInt(t, len(cfg.Apt.PostHooks), 1)
-	assertEqualInt(t, len(cfg.Dotfiles.Files), 1)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Apt)
+	require.NotNil(t, cfg.Dotfiles)
+	assert.Equal(t, 2, len(cfg.Apt.Packages))
+	assert.Equal(t, 1, len(cfg.Apt.PostHooks))
+	assert.Equal(t, 1, len(cfg.Dotfiles.Files))
 }
 
 func TestLoadConfig_ReadError(t *testing.T) {
-	// Create a file that exists but cannot be read
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.toml")
-	if err := os.WriteFile(path, []byte("hello"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// Make it unreadable
-	if err := os.Chmod(path, 0o000); err != nil {
-		t.Fatal(err)
-	}
+	path := withTempConfig(t, "hello")
+	os.Chmod(path, 0o000)
 	t.Cleanup(func() { os.Chmod(path, 0o644) })
 
 	_, err := loadConfig(path)
-	assertError(t, err)
-	assertContains(t, err.Error(), "error reading config file")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "error reading config file")
 }

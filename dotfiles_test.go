@@ -4,6 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestExpandPath_Tilde(t *testing.T) {
@@ -14,12 +17,12 @@ func TestExpandPath_Tilde(t *testing.T) {
 
 	got := expandPath("~/foo/bar")
 	want := filepath.Join(home, "foo/bar")
-	assertEqualStr(t, got, want)
+	assert.Equal(t, want, got)
 }
 
 func TestExpandPath_NoTilde(t *testing.T) {
 	got := expandPath("/absolute/path")
-	assertEqualStr(t, got, "/absolute/path")
+	assert.Equal(t, "/absolute/path", got)
 }
 
 func TestExpandPath_TildeHomeError(t *testing.T) {
@@ -40,12 +43,12 @@ func TestExpandPath_TildeHomeError(t *testing.T) {
 func TestExpandPath_TildeOnly(t *testing.T) {
 	// "~" without "/" should not be expanded
 	got := expandPath("~")
-	assertEqualStr(t, got, "~")
+	assert.Equal(t, "~", got)
 }
 
 func TestExpandPath_RelativePath(t *testing.T) {
 	got := expandPath("relative/path")
-	assertEqualStr(t, got, "relative/path")
+	assert.Equal(t, "relative/path", got)
 }
 
 func TestFilesEqual_Same(t *testing.T) {
@@ -56,8 +59,8 @@ func TestFilesEqual_Same(t *testing.T) {
 	os.WriteFile(f2, []byte("hello world"), 0o644)
 
 	equal, err := filesEqual(f1, f2)
-	assertNoError(t, err)
-	assertEqualBool(t, equal, true)
+	require.NoError(t, err)
+	assert.Equal(t, true, equal)
 }
 
 func TestFilesEqual_Different(t *testing.T) {
@@ -68,8 +71,8 @@ func TestFilesEqual_Different(t *testing.T) {
 	os.WriteFile(f2, []byte("world"), 0o644)
 
 	equal, err := filesEqual(f1, f2)
-	assertNoError(t, err)
-	assertEqualBool(t, equal, false)
+	require.NoError(t, err)
+	assert.Equal(t, false, equal)
 }
 
 func TestFilesEqual_MissingFile(t *testing.T) {
@@ -78,7 +81,7 @@ func TestFilesEqual_MissingFile(t *testing.T) {
 	os.WriteFile(f1, []byte("hello"), 0o644)
 
 	_, err := filesEqual(f1, filepath.Join(dir, "nonexistent"))
-	assertError(t, err)
+	require.Error(t, err)
 }
 
 func TestFilesEqual_MissingSrc(t *testing.T) {
@@ -87,7 +90,7 @@ func TestFilesEqual_MissingSrc(t *testing.T) {
 	os.WriteFile(f2, []byte("hello"), 0o644)
 
 	_, err := filesEqual(filepath.Join(dir, "nonexistent"), f2)
-	assertError(t, err)
+	require.Error(t, err)
 }
 
 func TestCopyFile(t *testing.T) {
@@ -98,25 +101,23 @@ func TestCopyFile(t *testing.T) {
 	os.WriteFile(src, []byte("file contents"), 0o755)
 
 	err := copyFile(src, dest)
-	assertNoError(t, err)
+	require.NoError(t, err)
 
 	// Check content
 	data, err := os.ReadFile(dest)
-	assertNoError(t, err)
-	assertEqualStr(t, string(data), "file contents")
+	require.NoError(t, err)
+	assert.Equal(t, "file contents", string(data))
 
 	// Check permissions
 	srcInfo, _ := os.Stat(src)
 	destInfo, _ := os.Stat(dest)
-	if srcInfo.Mode() != destInfo.Mode() {
-		t.Errorf("permissions differ: src=%v dest=%v", srcInfo.Mode(), destInfo.Mode())
-	}
+	assert.Equal(t, srcInfo.Mode(), destInfo.Mode())
 }
 
 func TestCopyFile_SrcNotExist(t *testing.T) {
 	dir := t.TempDir()
 	err := copyFile(filepath.Join(dir, "nonexistent"), filepath.Join(dir, "dest"))
-	assertError(t, err)
+	require.Error(t, err)
 }
 
 func TestCheckLink_Missing(t *testing.T) {
@@ -130,10 +131,8 @@ func TestCheckLink_Missing(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	status, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: filepath.Join(dir, "nonexistent")})
-	assertNoError(t, err)
-	if status != LinkMissing {
-		t.Errorf("expected LinkMissing, got %d", status)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, LinkMissing, status)
 }
 
 func TestCheckLink_CorrectSymlink(t *testing.T) {
@@ -149,10 +148,8 @@ func TestCheckLink_CorrectSymlink(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	status, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: destFile})
-	assertNoError(t, err)
-	if status != LinkCorrect {
-		t.Errorf("expected LinkCorrect, got %d", status)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, LinkCorrect, status)
 }
 
 func TestCheckLink_IncorrectSymlink(t *testing.T) {
@@ -168,10 +165,8 @@ func TestCheckLink_IncorrectSymlink(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	status, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: destFile})
-	assertNoError(t, err)
-	if status != LinkIncorrect {
-		t.Errorf("expected LinkIncorrect, got %d", status)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, LinkIncorrect, status)
 }
 
 func TestCheckLink_RegularFile(t *testing.T) {
@@ -187,10 +182,8 @@ func TestCheckLink_RegularFile(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	status, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: destFile})
-	assertNoError(t, err)
-	if status != LinkIsFile {
-		t.Errorf("expected LinkIsFile, got %d", status)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, LinkIsFile, status)
 }
 
 func TestCheckLink_Directory(t *testing.T) {
@@ -206,10 +199,8 @@ func TestCheckLink_Directory(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	status, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: destDir})
-	assertNoError(t, err)
-	if status != LinkIsDir {
-		t.Errorf("expected LinkIsDir, got %d", status)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, LinkIsDir, status)
 }
 
 func TestCheckLink_SourceMissing(t *testing.T) {
@@ -219,8 +210,8 @@ func TestCheckLink_SourceMissing(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.CheckLink(Dotfile{Src: "nonexistent", Dest: filepath.Join(dir, ".vimrc")})
-	assertError(t, err)
-	assertContains(t, err.Error(), "source file does not exist")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "source file does not exist")
 }
 
 func TestCheckLink_CopyCorrect(t *testing.T) {
@@ -237,10 +228,8 @@ func TestCheckLink_CopyCorrect(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	status, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: destFile, Mode: "copy"})
-	assertNoError(t, err)
-	if status != CopyCorrect {
-		t.Errorf("expected CopyCorrect, got %d", status)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, CopyCorrect, status)
 }
 
 func TestCheckLink_CopyOutdated(t *testing.T) {
@@ -256,10 +245,8 @@ func TestCheckLink_CopyOutdated(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	status, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: destFile, Mode: "copy"})
-	assertNoError(t, err)
-	if status != CopyOutdated {
-		t.Errorf("expected CopyOutdated, got %d", status)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, CopyOutdated, status)
 }
 
 func TestCheckLink_CopyDirAtDest(t *testing.T) {
@@ -275,10 +262,8 @@ func TestCheckLink_CopyDirAtDest(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	status, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: destDir, Mode: "copy"})
-	assertNoError(t, err)
-	if status != LinkIsDir {
-		t.Errorf("expected LinkIsDir for copy mode with dir at dest, got %d", status)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, LinkIsDir, status)
 }
 
 func TestCheckLink_CopySymlinkAtDest(t *testing.T) {
@@ -295,11 +280,9 @@ func TestCheckLink_CopySymlinkAtDest(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	status, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: destFile, Mode: "copy"})
-	assertNoError(t, err)
+	require.NoError(t, err)
 	// Symlink is not a regular file, so should be CopyOutdated
-	if status != CopyOutdated {
-		t.Errorf("expected CopyOutdated for symlink in copy mode, got %d", status)
-	}
+	assert.Equal(t, CopyOutdated, status)
 }
 
 func TestApply_LinkMissing(t *testing.T) {
@@ -314,13 +297,13 @@ func TestApply_LinkMissing(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile}, false)
-	assertNoError(t, err)
-	assertEqualBool(t, created, true)
+	require.NoError(t, err)
+	assert.Equal(t, true, created)
 
 	// Verify symlink was created
 	target, err := os.Readlink(destFile)
-	assertNoError(t, err)
-	assertEqualStr(t, target, srcFile)
+	require.NoError(t, err)
+	assert.Equal(t, srcFile, target)
 }
 
 func TestApply_LinkCorrect(t *testing.T) {
@@ -336,8 +319,8 @@ func TestApply_LinkCorrect(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile}, false)
-	assertNoError(t, err)
-	assertEqualBool(t, created, false)
+	require.NoError(t, err)
+	assert.Equal(t, false, created)
 }
 
 func TestApply_LinkIncorrect(t *testing.T) {
@@ -353,13 +336,13 @@ func TestApply_LinkIncorrect(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile}, false)
-	assertNoError(t, err)
-	assertEqualBool(t, created, true)
+	require.NoError(t, err)
+	assert.Equal(t, true, created)
 
 	// Verify symlink was updated
 	target, err := os.Readlink(destFile)
-	assertNoError(t, err)
-	assertEqualStr(t, target, srcFile)
+	require.NoError(t, err)
+	assert.Equal(t, srcFile, target)
 }
 
 func TestApply_LinkIsFile(t *testing.T) {
@@ -375,17 +358,17 @@ func TestApply_LinkIsFile(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile}, false)
-	assertNoError(t, err)
-	assertEqualBool(t, created, true)
+	require.NoError(t, err)
+	assert.Equal(t, true, created)
 
 	// Verify backup was created
 	_, err = os.Stat(destFile + ".backup")
-	assertNoError(t, err)
+	require.NoError(t, err)
 
 	// Verify symlink points to source
 	target, err := os.Readlink(destFile)
-	assertNoError(t, err)
-	assertEqualStr(t, target, srcFile)
+	require.NoError(t, err)
+	assert.Equal(t, srcFile, target)
 }
 
 func TestApply_LinkIsFile_Verbose(t *testing.T) {
@@ -402,11 +385,11 @@ func TestApply_LinkIsFile_Verbose(t *testing.T) {
 	dm := NewDotfilesManager(srcDir, true)
 	out := captureOutput(t, func() {
 		created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile}, false)
-		assertNoError(t, err)
-		assertEqualBool(t, created, true)
+		require.NoError(t, err)
+		assert.Equal(t, true, created)
 	})
 
-	assertContains(t, out, "backed up")
+	assert.Contains(t, out, "backed up")
 }
 
 func TestApply_LinkIsDir(t *testing.T) {
@@ -422,8 +405,8 @@ func TestApply_LinkIsDir(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destDir}, false)
-	assertError(t, err)
-	assertContains(t, err.Error(), "directory exists")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "directory exists")
 }
 
 func TestApply_CopyMissing(t *testing.T) {
@@ -438,16 +421,14 @@ func TestApply_CopyMissing(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile, Mode: "copy"}, false)
-	assertNoError(t, err)
-	assertEqualBool(t, created, true)
+	require.NoError(t, err)
+	assert.Equal(t, true, created)
 
 	// Verify file was copied (not symlinked)
 	info, _ := os.Lstat(destFile)
-	if info.Mode()&os.ModeSymlink != 0 {
-		t.Error("expected regular file, got symlink")
-	}
+	assert.Zero(t, info.Mode()&os.ModeSymlink, "expected regular file, got symlink")
 	data, _ := os.ReadFile(destFile)
-	assertEqualStr(t, string(data), "set nocompatible")
+	assert.Equal(t, "set nocompatible", string(data))
 }
 
 func TestApply_CopyCorrect(t *testing.T) {
@@ -464,8 +445,8 @@ func TestApply_CopyCorrect(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile, Mode: "copy"}, false)
-	assertNoError(t, err)
-	assertEqualBool(t, created, false)
+	require.NoError(t, err)
+	assert.Equal(t, false, created)
 }
 
 func TestApply_CopyOutdated(t *testing.T) {
@@ -481,11 +462,11 @@ func TestApply_CopyOutdated(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile, Mode: "copy"}, false)
-	assertNoError(t, err)
-	assertEqualBool(t, created, true)
+	require.NoError(t, err)
+	assert.Equal(t, true, created)
 
 	data, _ := os.ReadFile(destFile)
-	assertEqualStr(t, string(data), "new content")
+	assert.Equal(t, "new content", string(data))
 }
 
 func TestApply_CopyDirAtDest(t *testing.T) {
@@ -501,8 +482,8 @@ func TestApply_CopyDirAtDest(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destDir, Mode: "copy"}, false)
-	assertError(t, err)
-	assertContains(t, err.Error(), "directory exists")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "directory exists")
 }
 
 func TestApply_DryRun_Link(t *testing.T) {
@@ -517,14 +498,12 @@ func TestApply_DryRun_Link(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile}, true)
-	assertNoError(t, err)
-	assertEqualBool(t, created, true)
+	require.NoError(t, err)
+	assert.Equal(t, true, created)
 
 	// Verify no symlink was created
 	_, err = os.Lstat(destFile)
-	if !os.IsNotExist(err) {
-		t.Error("expected no file to be created in dry-run mode")
-	}
+	assert.True(t, os.IsNotExist(err), "expected no file to be created in dry-run mode")
 }
 
 func TestApply_DryRun_Copy(t *testing.T) {
@@ -539,14 +518,12 @@ func TestApply_DryRun_Copy(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile, Mode: "copy"}, true)
-	assertNoError(t, err)
-	assertEqualBool(t, created, true)
+	require.NoError(t, err)
+	assert.Equal(t, true, created)
 
 	// Verify no file was created
 	_, err = os.Lstat(destFile)
-	if !os.IsNotExist(err) {
-		t.Error("expected no file to be created in dry-run mode")
-	}
+	assert.True(t, os.IsNotExist(err), "expected no file to be created in dry-run mode")
 }
 
 func TestApply_DryRun_LinkIncorrect(t *testing.T) {
@@ -562,12 +539,12 @@ func TestApply_DryRun_LinkIncorrect(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile}, true)
-	assertNoError(t, err)
-	assertEqualBool(t, created, true)
+	require.NoError(t, err)
+	assert.Equal(t, true, created)
 
 	// Verify symlink was NOT changed
 	target, _ := os.Readlink(destFile)
-	assertEqualStr(t, target, "/wrong/target")
+	assert.Equal(t, "/wrong/target", target)
 }
 
 func TestApply_DryRun_LinkIsFile(t *testing.T) {
@@ -583,12 +560,12 @@ func TestApply_DryRun_LinkIsFile(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile}, true)
-	assertNoError(t, err)
-	assertEqualBool(t, created, true)
+	require.NoError(t, err)
+	assert.Equal(t, true, created)
 
 	// Verify file was NOT changed
 	data, _ := os.ReadFile(destFile)
-	assertEqualStr(t, string(data), "existing")
+	assert.Equal(t, "existing", string(data))
 }
 
 func TestApply_DryRun_CopyOutdated(t *testing.T) {
@@ -604,12 +581,12 @@ func TestApply_DryRun_CopyOutdated(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile, Mode: "copy"}, true)
-	assertNoError(t, err)
-	assertEqualBool(t, created, true)
+	require.NoError(t, err)
+	assert.Equal(t, true, created)
 
 	// Verify file was NOT changed
 	data, _ := os.ReadFile(destFile)
-	assertEqualStr(t, string(data), "old")
+	assert.Equal(t, "old", string(data))
 }
 
 // --- Error paths ---
@@ -633,7 +610,7 @@ func TestCheckLink_LstatError(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: destFile})
-	assertError(t, err)
+	require.Error(t, err)
 }
 
 func TestCheckLink_FilesEqualError(t *testing.T) {
@@ -652,10 +629,8 @@ func TestCheckLink_FilesEqualError(t *testing.T) {
 	dm := NewDotfilesManager(srcDir, false)
 	status, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: destFile, Mode: "copy"})
 	// filesEqual should fail reading unreadable dest file
-	if status != CopyOutdated {
-		t.Errorf("expected CopyOutdated, got %d", status)
-	}
-	assertError(t, err)
+	assert.Equal(t, CopyOutdated, status)
+	require.Error(t, err)
 }
 
 func TestApply_LinkMissing_MkdirAllError(t *testing.T) {
@@ -676,8 +651,8 @@ func TestApply_LinkMissing_MkdirAllError(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile}, false)
-	assertError(t, err)
-	assertContains(t, err.Error(), "failed to create directory")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to create directory")
 }
 
 func TestApply_LinkMissing_SymlinkError(t *testing.T) {
@@ -700,8 +675,8 @@ func TestApply_LinkMissing_SymlinkError(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile}, false)
-	assertError(t, err)
-	assertContains(t, err.Error(), "failed to create symlink")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to create symlink")
 }
 
 func TestApply_LinkIncorrect_RemoveError(t *testing.T) {
@@ -724,8 +699,8 @@ func TestApply_LinkIncorrect_RemoveError(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile}, false)
-	assertError(t, err)
-	assertContains(t, err.Error(), "failed to remove old symlink")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to remove old symlink")
 }
 
 func TestApply_LinkIsFile_RenameError(t *testing.T) {
@@ -748,8 +723,8 @@ func TestApply_LinkIsFile_RenameError(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile}, false)
-	assertError(t, err)
-	assertContains(t, err.Error(), "failed to backup existing file")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to backup existing file")
 }
 
 func TestApply_CopyMissing_MkdirAllError(t *testing.T) {
@@ -769,8 +744,8 @@ func TestApply_CopyMissing_MkdirAllError(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile, Mode: "copy"}, false)
-	assertError(t, err)
-	assertContains(t, err.Error(), "failed to create directory")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to create directory")
 }
 
 func TestApply_CopyMissing_CopyFileError(t *testing.T) {
@@ -790,8 +765,8 @@ func TestApply_CopyMissing_CopyFileError(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile, Mode: "copy"}, false)
-	assertError(t, err)
-	assertContains(t, err.Error(), "failed to copy file")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to copy file")
 }
 
 func TestApply_CopyOutdated_CopyFileError(t *testing.T) {
@@ -809,8 +784,8 @@ func TestApply_CopyOutdated_CopyFileError(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile, Mode: "copy"}, false)
-	assertError(t, err)
-	assertContains(t, err.Error(), "failed to update copy")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to update copy")
 }
 
 func TestCopyFile_DestOpenError(t *testing.T) {
@@ -825,7 +800,7 @@ func TestCopyFile_DestOpenError(t *testing.T) {
 
 	dest := filepath.Join(parentDir, "dest.txt")
 	err := copyFile(src, dest)
-	assertError(t, err)
+	require.Error(t, err)
 }
 
 func TestApply_SourceMissing(t *testing.T) {
@@ -835,6 +810,6 @@ func TestApply_SourceMissing(t *testing.T) {
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.Apply(Dotfile{Src: "nonexistent", Dest: filepath.Join(dir, ".vimrc")}, false)
-	assertError(t, err)
-	assertContains(t, err.Error(), "source file does not exist")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "source file does not exist")
 }
