@@ -134,11 +134,11 @@ var GetAvailableVersion = func(name string) (string, error) {
 	}
 
 	// Parse output to find "Candidate:" line
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
+	lines := strings.SplitSeq(string(output), "\n")
+	for line := range lines {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "Candidate:") {
-			version := strings.TrimSpace(strings.TrimPrefix(line, "Candidate:"))
+		if after, ok := strings.CutPrefix(line, "Candidate:"); ok {
+			version := strings.TrimSpace(after)
 			if version == "(none)" {
 				return "", fmt.Errorf("no candidate version")
 			}
@@ -160,10 +160,7 @@ func (s *StateManager) SyncPackageVersions(packages []string) error {
 	}
 
 	const maxWorkers = 20
-	workers := maxWorkers
-	if len(packages) < workers {
-		workers = len(packages)
-	}
+	workers := min(len(packages), maxWorkers)
 
 	jobs := make(chan string, len(packages))
 	results := make(chan versionResult, len(packages))
@@ -189,7 +186,7 @@ func (s *StateManager) SyncPackageVersions(packages []string) error {
 	close(jobs)
 
 	// Collect results
-	for i := 0; i < len(packages); i++ {
+	for range packages {
 		result := <-results
 		if result.version != "" {
 			s.SetPackageVersion(result.name, result.version)

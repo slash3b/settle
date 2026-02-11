@@ -696,10 +696,7 @@ func (s *Settle) listApt() error {
 
 	// Fetch version info concurrently
 	const maxWorkers = 20
-	workers := maxWorkers
-	if len(allPackages) < workers {
-		workers = len(allPackages)
-	}
+	workers := min(len(allPackages), maxWorkers)
 
 	jobs := make(chan string, len(allPackages))
 	results := make(chan packageInfo, len(allPackages))

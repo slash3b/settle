@@ -51,10 +51,7 @@ func (d *DebianManager) CheckInstalled(packages []string) ([]string, error) {
 
 	// Use a worker pool to limit concurrent checks
 	const maxWorkers = 20
-	workers := maxWorkers
-	if len(packages) < workers {
-		workers = len(packages)
-	}
+	workers := min(len(packages), maxWorkers)
 
 	// Channels for communication
 	jobs := make(chan string, len(packages))
@@ -81,7 +78,7 @@ func (d *DebianManager) CheckInstalled(packages []string) ([]string, error) {
 
 	// Collect results
 	missing := make([]string, 0)
-	for i := 0; i < len(packages); i++ {
+	for range packages {
 		result := <-results
 		if !result.isInstalled {
 			missing = append(missing, result.name)

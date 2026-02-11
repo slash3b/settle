@@ -2,6 +2,7 @@ package main
 
 import (
 	"os/exec"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -374,12 +375,12 @@ func TestRunPostInstall_Verbose(t *testing.T) {
 
 // helper to join args into a single string for assertion
 func joinArgs(args []string) string {
-	result := ""
+	var result strings.Builder
 	for i, a := range args {
 		if i > 0 {
-			result += " "
+			result.WriteString(" ")
 		}
-		result += a
+		result.WriteString(a)
 	}
-	return result
+	return result.String()
 }

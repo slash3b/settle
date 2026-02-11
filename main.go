@@ -85,7 +85,6 @@ func main() {
 		os.Exit(130) // Standard exit code for SIGINT
 	}()
 
-	//
 	cfg, err := loadConfig(configPath)
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
