@@ -32,6 +32,13 @@ func (s *Settle) Apply() error {
 		fmt.Println()
 	}
 
+	// Pull latest config from git if applicable
+	if !s.dryRun {
+		if err := GitPull(s.configPath, s.verbose); err != nil {
+			return fmt.Errorf("git: %w", err)
+		}
+	}
+
 	managersFound := 0
 
 	// Handle apt packages
