@@ -1,7 +1,7 @@
 package main
 
 import (
-	"flag"
+    "flag"
 	"fmt"
 	"log"
 	"os"
@@ -46,7 +46,6 @@ Flags:
 }
 
 func main() {
-	// Parse command line flags
 	flag.BoolVar(&verbose, "v", false, "Enable verbose output")
 	flag.BoolVar(&verbose, "verbose", false, "Enable verbose output")
 	flag.StringVar(&configPath, "config", defaultConfigPath, "Path to config file")
@@ -63,7 +62,7 @@ func main() {
 	}
 
 	// Handle version subcommand early (before config loading)
-	if len(flag.Args()) > 0 && flag.Args()[0] == "version" {
+	if len(flag.Args()) > 0 && flag.Arg(0) == "version" {
 		printVersion()
 		return
 	}
@@ -89,6 +88,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+
 
 	// Create the orchestrator
 	settle := NewSettle(cfg, configPath, verbose, dryRun)

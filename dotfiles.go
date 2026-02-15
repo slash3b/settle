@@ -217,8 +217,10 @@ func expandPath(path string) string {
 		if err != nil {
 			return path
 		}
+
 		return filepath.Join(home, path[2:])
 	}
+
 	return path
 }
 
@@ -228,10 +230,12 @@ func filesEqual(path1, path2 string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+
 	f2, err := os.ReadFile(path2)
 	if err != nil {
 		return false, err
 	}
+
 	return bytes.Equal(f1, f2), nil
 }
 
@@ -241,6 +245,7 @@ func copyFile(src, dest string) error {
 	if err != nil {
 		return err
 	}
+
 	defer srcFile.Close()
 
 	srcInfo, err := srcFile.Stat()
@@ -252,8 +257,10 @@ func copyFile(src, dest string) error {
 	if err != nil {
 		return err
 	}
+
 	defer destFile.Close()
 
 	_, err = io.Copy(destFile, srcFile)
+
 	return err
 }
