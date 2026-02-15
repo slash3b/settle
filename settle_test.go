@@ -22,7 +22,7 @@ func TestApply_NoConfig(t *testing.T) {
 	out := captureOutput(t, func() {
 		err := s.Apply()
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "no packages, dotfiles, or git repos configured")
+		assert.Contains(t, err.Error(), "no packages, dotfiles, git repos, or go packages configured")
 	})
 	_ = out
 }
@@ -3156,4 +3156,483 @@ dest = "%s"
 	assert.Contains(t, out, "cloned")
 	assert.Contains(t, out, "missing")
 	assert.Contains(t, out, "not a git repo")
+}
+
+// --- Go package tests ---
+
+func TestApplyGo_SkipsExisting(t *testing.T) {
+	saveMocks(t)
+
+	binDir := t.TempDir()
+	// Pre-create the binary
+	os.WriteFile(filepath.Join(binDir, "golangci-lint"), []byte("fake"), 0o755)
+
+	GoBinPath = func() (string, error) { return binDir, nil }
+	installCalled := false
+	GoInstall = func(path, version string, verbose bool) error {
+		installCalled = true
+		return nil
+	}
+
+	configPath := withTempConfig(t, `
+[[go]]
+path = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
+version = "v2.9.0"
+`)
+	// Lockfile version matches config — should skip
+	writeLockfile(t, configPath, `{"packages":{"golangci-lint":{"version":"v2.9.0","installed_at":"2026-01-01T00:00:00Z"}}}`)
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		err := s.applyGo()
+		require.NoError(t, err)
+	})
+
+	assert.False(t, installCalled)
+	assert.Contains(t, out, "1 packages already installed")
+}
+
+func TestApplyGo_UpgradesOutdated(t *testing.T) {
+	saveMocks(t)
+
+	binDir := t.TempDir()
+	// Pre-create the binary (old version exists)
+	os.WriteFile(filepath.Join(binDir, "golangci-lint"), []byte("fake"), 0o755)
+
+	GoBinPath = func() (string, error) { return binDir, nil }
+
+	var installedVersion string
+	GoInstall = func(path, version string, verbose bool) error {
+		installedVersion = version
+		return nil
+	}
+
+	configPath := withTempConfig(t, `
+[[go]]
+path = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
+version = "v2.9.0"
+`)
+	// Lockfile has older version — should upgrade
+	writeLockfile(t, configPath, `{"packages":{"golangci-lint":{"version":"v2.2.2","installed_at":"2026-01-01T00:00:00Z"}}}`)
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		err := s.applyGo()
+		require.NoError(t, err)
+	})
+
+	assert.Equal(t, "v2.9.0", installedVersion)
+	assert.Contains(t, out, "golangci-lint")
+	assert.Contains(t, out, "upgraded")
+
+	// Verify lockfile was updated
+	lockfile := NewStateManager(configPath)
+	require.NoError(t, lockfile.Load())
+	version, ok := lockfile.GetPackageVersion("golangci-lint")
+	assert.True(t, ok)
+	assert.Equal(t, "v2.9.0", version)
+}
+
+func TestApplyGo_AdoptsExistingWithoutLockfile(t *testing.T) {
+	saveMocks(t)
+
+	binDir := t.TempDir()
+	// Binary exists but no lockfile entry
+	os.WriteFile(filepath.Join(binDir, "mytool"), []byte("fake"), 0o755)
+
+	GoBinPath = func() (string, error) { return binDir, nil }
+
+	var installedVersion string
+	GoInstall = func(path, version string, verbose bool) error {
+		installedVersion = version
+		return nil
+	}
+
+	configPath := withTempConfig(t, `
+[[go]]
+path = "github.com/user/mytool"
+version = "v1.0.0"
+`)
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		err := s.applyGo()
+		require.NoError(t, err)
+	})
+
+	assert.Equal(t, "v1.0.0", installedVersion)
+	assert.Contains(t, out, "upgraded")
+}
+
+func TestApplyGo_DryRunUpgrade(t *testing.T) {
+	saveMocks(t)
+
+	binDir := t.TempDir()
+	os.WriteFile(filepath.Join(binDir, "golangci-lint"), []byte("fake"), 0o755)
+
+	GoBinPath = func() (string, error) { return binDir, nil }
+	installCalled := false
+	GoInstall = func(path, version string, verbose bool) error {
+		installCalled = true
+		return nil
+	}
+
+	configPath := withTempConfig(t, `
+[[go]]
+path = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
+version = "v2.9.0"
+`)
+	writeLockfile(t, configPath, `{"packages":{"golangci-lint":{"version":"v2.2.2","installed_at":"2026-01-01T00:00:00Z"}}}`)
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, true)
+
+	out := captureOutput(t, func() {
+		err := s.applyGo()
+		require.NoError(t, err)
+	})
+
+	assert.False(t, installCalled)
+	assert.Contains(t, out, "[dry-run] Would upgrade")
+	assert.Contains(t, out, "v2.2.2")
+	assert.Contains(t, out, "v2.9.0")
+}
+
+func TestApplyGo_InstallsMissing(t *testing.T) {
+	saveMocks(t)
+
+	binDir := t.TempDir()
+	GoBinPath = func() (string, error) { return binDir, nil }
+
+	var installedPkg string
+	GoInstall = func(path, version string, verbose bool) error {
+		installedPkg = path
+		return nil
+	}
+
+	configPath := withTempConfig(t, `
+[[go]]
+path = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
+version = "v2.9.0"
+`)
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		err := s.applyGo()
+		require.NoError(t, err)
+	})
+
+	assert.Equal(t, "github.com/golangci/golangci-lint/v2/cmd/golangci-lint", installedPkg)
+	assert.Contains(t, out, "golangci-lint")
+	assert.Contains(t, out, "installed")
+
+	// Verify lockfile was updated
+	lockfile := NewStateManager(configPath)
+	require.NoError(t, lockfile.Load())
+	version, ok := lockfile.GetPackageVersion("golangci-lint")
+	assert.True(t, ok)
+	assert.Equal(t, "v2.9.0", version)
+}
+
+func TestApplyGo_DryRun(t *testing.T) {
+	saveMocks(t)
+
+	binDir := t.TempDir()
+	GoBinPath = func() (string, error) { return binDir, nil }
+
+	installCalled := false
+	GoInstall = func(path, version string, verbose bool) error {
+		installCalled = true
+		return nil
+	}
+
+	configPath := withTempConfig(t, `
+[[go]]
+path = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
+version = "v2.9.0"
+`)
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, true)
+
+	out := captureOutput(t, func() {
+		err := s.applyGo()
+		require.NoError(t, err)
+	})
+
+	assert.False(t, installCalled)
+	assert.Contains(t, out, "[dry-run]")
+	assert.Contains(t, out, "golangci-lint")
+}
+
+func TestApplyGo_InstallError(t *testing.T) {
+	saveMocks(t)
+
+	binDir := t.TempDir()
+	GoBinPath = func() (string, error) { return binDir, nil }
+	GoInstall = func(path, version string, verbose bool) error {
+		return fmt.Errorf("network error")
+	}
+
+	configPath := withTempConfig(t, `
+[[go]]
+path = "github.com/user/tool"
+version = "v1.0.0"
+`)
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	captureOutput(t, func() {
+		err := s.applyGo()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to install")
+	})
+}
+
+func TestApplyGo_BinPathError(t *testing.T) {
+	saveMocks(t)
+
+	GoBinPath = func() (string, error) { return "", fmt.Errorf("go not found") }
+
+	configPath := withTempConfig(t, `
+[[go]]
+path = "github.com/user/tool"
+version = "v1.0.0"
+`)
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	captureOutput(t, func() {
+		err := s.applyGo()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "cannot determine Go bin path")
+	})
+}
+
+func TestUpdateGo(t *testing.T) {
+	saveMocks(t)
+
+	var installed []string
+	GoInstall = func(path, version string, verbose bool) error {
+		installed = append(installed, path+"@"+version)
+		return nil
+	}
+
+	configPath := withTempConfig(t, `
+[[go]]
+path = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
+version = "v2.9.0"
+
+[[go]]
+path = "golang.org/x/tools/cmd/goimports"
+version = "v0.25.0"
+`)
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		err := s.updateGo()
+		require.NoError(t, err)
+	})
+
+	assert.Equal(t, 2, len(installed))
+	assert.Contains(t, out, "Updating 2 go packages")
+
+	// Verify lockfile was updated
+	lockfile := NewStateManager(configPath)
+	require.NoError(t, lockfile.Load())
+	v1, ok := lockfile.GetPackageVersion("golangci-lint")
+	assert.True(t, ok)
+	assert.Equal(t, "v2.9.0", v1)
+	v2, ok := lockfile.GetPackageVersion("goimports")
+	assert.True(t, ok)
+	assert.Equal(t, "v0.25.0", v2)
+}
+
+func TestUpdateGo_DryRun(t *testing.T) {
+	saveMocks(t)
+
+	installCalled := false
+	GoInstall = func(path, version string, verbose bool) error {
+		installCalled = true
+		return nil
+	}
+
+	configPath := withTempConfig(t, `
+[[go]]
+path = "github.com/user/tool"
+version = "v1.0.0"
+`)
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, true)
+
+	out := captureOutput(t, func() {
+		err := s.updateGo()
+		require.NoError(t, err)
+	})
+
+	assert.False(t, installCalled)
+	assert.Contains(t, out, "[dry-run]")
+}
+
+func TestUpdateGo_Error(t *testing.T) {
+	saveMocks(t)
+
+	GoInstall = func(path, version string, verbose bool) error {
+		return fmt.Errorf("failed")
+	}
+
+	configPath := withTempConfig(t, `
+[[go]]
+path = "github.com/user/tool"
+version = "v1.0.0"
+`)
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	captureOutput(t, func() {
+		err := s.updateGo()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to update")
+	})
+}
+
+func TestListGo(t *testing.T) {
+	saveMocks(t)
+
+	binDir := t.TempDir()
+	// Create one installed binary
+	os.WriteFile(filepath.Join(binDir, "golangci-lint"), []byte("fake"), 0o755)
+
+	GoBinPath = func() (string, error) { return binDir, nil }
+
+	configPath := withTempConfig(t, `
+[[go]]
+path = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
+version = "v2.9.0"
+
+[[go]]
+path = "golang.org/x/tools/cmd/goimports"
+version = "v0.25.0"
+`)
+	// Lockfile matches config for golangci-lint
+	writeLockfile(t, configPath, `{"packages":{"golangci-lint":{"version":"v2.9.0","installed_at":"2026-01-01T00:00:00Z"}}}`)
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		s.listGo()
+	})
+
+	assert.Contains(t, out, "Go Packages:")
+	assert.Contains(t, out, "golangci-lint")
+	assert.Contains(t, out, "v2.9.0")
+	assert.Contains(t, out, "goimports")
+	assert.Contains(t, out, "missing")
+}
+
+func TestListGo_Outdated(t *testing.T) {
+	saveMocks(t)
+
+	binDir := t.TempDir()
+	os.WriteFile(filepath.Join(binDir, "mytool"), []byte("fake"), 0o755)
+
+	GoBinPath = func() (string, error) { return binDir, nil }
+
+	configPath := withTempConfig(t, `
+[[go]]
+path = "github.com/user/mytool"
+version = "v2.0.0"
+`)
+	// Lockfile has older version
+	writeLockfile(t, configPath, `{"packages":{"mytool":{"version":"v1.5.0","installed_at":"2026-01-01T00:00:00Z"}}}`)
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		s.listGo()
+	})
+
+	assert.Contains(t, out, "v1.5.0")
+	assert.Contains(t, out, "config: v2.0.0")
+}
+
+func TestListGo_NotInLockfile(t *testing.T) {
+	saveMocks(t)
+
+	binDir := t.TempDir()
+	os.WriteFile(filepath.Join(binDir, "mytool"), []byte("fake"), 0o755)
+
+	GoBinPath = func() (string, error) { return binDir, nil }
+
+	configPath := withTempConfig(t, `
+[[go]]
+path = "github.com/user/mytool"
+version = "v1.0.0"
+`)
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		s.listGo()
+	})
+
+	assert.Contains(t, out, "not in lockfile")
+}
+
+func TestListGo_BinPathError(t *testing.T) {
+	saveMocks(t)
+
+	GoBinPath = func() (string, error) { return "", fmt.Errorf("go not found") }
+
+	configPath := withTempConfig(t, `
+[[go]]
+path = "github.com/user/tool"
+version = "v1.0.0"
+`)
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		s.listGo()
+	})
+
+	assert.Contains(t, out, "Warning: cannot determine Go bin path")
+}
+
+func TestApply_GoPackages(t *testing.T) {
+	saveMocks(t)
+
+	binDir := t.TempDir()
+	GoBinPath = func() (string, error) { return binDir, nil }
+
+	var installed []string
+	GoInstall = func(path, version string, verbose bool) error {
+		installed = append(installed, path)
+		return nil
+	}
+
+	configPath := withTempConfig(t, `
+[[go]]
+path = "github.com/user/tool"
+version = "v1.0.0"
+`)
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		err := s.Apply()
+		require.NoError(t, err)
+	})
+
+	assert.Equal(t, 1, len(installed))
+	assert.Contains(t, out, "Done!")
 }

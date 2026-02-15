@@ -126,12 +126,16 @@ func saveMocks(t *testing.T) {
 	origGetInstalledVersion := GetInstalledVersion
 	origGetAvailableVersion := GetAvailableVersion
 	origOsReleasePath := osReleasePath
+	origGoInstall := GoInstall
+	origGoBinPath := GoBinPath
 
 	t.Cleanup(func() {
 		execCommand = origExecCommand
 		GetInstalledVersion = origGetInstalledVersion
 		GetAvailableVersion = origGetAvailableVersion
 		osReleasePath = origOsReleasePath
+		GoInstall = origGoInstall
+		GoBinPath = origGoBinPath
 	})
 }
 

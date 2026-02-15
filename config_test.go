@@ -148,3 +148,34 @@ packages = ["vim"]
 	assert.Equal(t, 0, len(cfg.Git))
 }
 
+func TestLoadConfig_ValidGo(t *testing.T) {
+	path := withTempConfig(t, `
+[[go]]
+path = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
+version = "v2.9.0"
+
+[[go]]
+path = "golang.org/x/tools/cmd/goimports"
+version = "v0.25.0"
+`)
+	cfg, err := loadConfig(path)
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, len(cfg.Go))
+	assert.Equal(t, "github.com/golangci/golangci-lint/v2/cmd/golangci-lint", cfg.Go[0].Path)
+	assert.Equal(t, "v2.9.0", cfg.Go[0].Version)
+	assert.Equal(t, "golang.org/x/tools/cmd/goimports", cfg.Go[1].Path)
+	assert.Equal(t, "v0.25.0", cfg.Go[1].Version)
+}
+
+func TestLoadConfig_EmptyGo(t *testing.T) {
+	path := withTempConfig(t, `
+[apt]
+packages = ["vim"]
+`)
+	cfg, err := loadConfig(path)
+	require.NoError(t, err)
+
+	assert.Equal(t, 0, len(cfg.Go))
+}
+
