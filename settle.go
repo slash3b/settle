@@ -495,6 +495,7 @@ func (s *Settle) applyApt() error {
 
 	// Add packages that need upgrading to lockfile version
 	var unavailableUpgrades []string
+	skippedUpgradeSet := make(map[string]bool)
 	for _, pkg := range needUpgrade {
 		lockVersion, ok := lockfile.GetPackageVersion(pkg)
 		if !ok {
@@ -504,11 +505,13 @@ func (s *Settle) applyApt() error {
 		available, err := GetAvailableVersion(pkg)
 		if err != nil {
 			unavailableUpgrades = append(unavailableUpgrades, fmt.Sprintf("%s=%s (not in repos)", pkg, lockVersion))
+			skippedUpgradeSet[pkg] = true
 			continue
 		}
 		// If the available version is still lower than lockfile, we can't upgrade to lockfile version
 		if CompareVersions(available, lockVersion) < 0 {
 			unavailableUpgrades = append(unavailableUpgrades, fmt.Sprintf("%s=%s (repo has %s)", pkg, lockVersion, available))
+			skippedUpgradeSet[pkg] = true
 			continue
 		}
 		installable = append(installable, pkg)
@@ -578,7 +581,7 @@ func (s *Settle) applyApt() error {
 				fmt.Printf("Warning: failed to update lockfile: %v\n", err)
 			}
 		}
-	} else if len(missingPackages) == 0 {
+	} else if len(missingPackages) == 0 && len(unavailableUpgrades) == 0 {
 		fmt.Println("All packages already installed!")
 	}
 
@@ -595,7 +598,7 @@ func (s *Settle) applyApt() error {
 		status := StatusSkipped
 		if missingSet[pkg] && !unknownSet[pkg] {
 			status = StatusInstalled
-		} else if needUpgradeSet[pkg] {
+		} else if needUpgradeSet[pkg] && !skippedUpgradeSet[pkg] {
 			status = StatusUpgraded
 		}
 		statuses = append(statuses, PackageStatus{
