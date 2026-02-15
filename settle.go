@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 
 	"github.com/fatih/color"
@@ -57,6 +59,14 @@ func (s *Settle) Apply() error {
 		}
 	}
 
+	// Handle Git repos
+	if len(s.config.Git) > 0 {
+		managersFound++
+		if err := s.applyGit(); err != nil {
+			return fmt.Errorf("error handling git repos: %w", err)
+		}
+	}
+
 	// Future managers would be handled here:
 	// if s.config.Cargo != nil {
 	//     managersFound++
@@ -66,7 +76,7 @@ func (s *Settle) Apply() error {
 	// }
 
 	if managersFound == 0 {
-		return fmt.Errorf("no packages or dotfiles configured in config.toml")
+		return fmt.Errorf("no packages, dotfiles, or git repos configured in config.toml")
 	}
 
 	// Sync state file (skip in dry-run mode)
@@ -305,63 +315,70 @@ func (s *Settle) Remove(packages []string) error {
 
 // Update upgrades all managed packages to their latest versions
 func (s *Settle) Update() error {
-	if s.config.Apt == nil {
-		fmt.Println("No packages configured")
-		return nil
-	}
+	hasApt := s.config.Apt != nil
+	hasGit := len(s.config.Git) > 0
 
-	distro := DetectDistro()
-	if !distro.IsDebianBased() {
-		return fmt.Errorf("unsupported distribution: %s", distro)
-	}
+	if hasApt {
+		distro := DetectDistro()
+		if !distro.IsDebianBased() {
+			return fmt.Errorf("unsupported distribution: %s", distro)
+		}
 
-	manager := NewDebianManager(s.verbose)
+		manager := NewDebianManager(s.verbose)
 
-	// Collect all packages from config
-	var allPackages []string
-	allPackages = append(allPackages, s.config.Apt.Packages...)
-	for _, pkg := range s.config.Apt.PostHooks {
-		allPackages = append(allPackages, pkg.Name)
-	}
+		// Collect all packages from config
+		var allPackages []string
+		allPackages = append(allPackages, s.config.Apt.Packages...)
+		for _, pkg := range s.config.Apt.PostHooks {
+			allPackages = append(allPackages, pkg.Name)
+		}
 
-	if len(allPackages) == 0 {
-		fmt.Println("No packages to update")
-		return nil
-	}
+		if len(allPackages) > 0 {
+			fmt.Printf("Updating %d managed packages...\n", len(allPackages))
 
-	fmt.Printf("Updating %d managed packages...\n", len(allPackages))
+			if s.dryRun {
+				fmt.Println("[dry-run] Would run: apt-get update")
+				fmt.Printf("[dry-run] Would upgrade: %v\n", allPackages)
+			} else {
+				// Refresh package lists
+				if err := manager.RefreshPackageLists(); err != nil {
+					return fmt.Errorf("failed to update package lists: %w", err)
+				}
 
-	if s.dryRun {
-		fmt.Println("[dry-run] Would run: apt-get update")
-		fmt.Printf("[dry-run] Would upgrade: %v\n", allPackages)
-		return nil
-	}
+				// Upgrade managed packages
+				if err := manager.Upgrade(allPackages); err != nil {
+					return fmt.Errorf("failed to upgrade packages: %w", err)
+				}
 
-	// Refresh package lists
-	if err := manager.RefreshPackageLists(); err != nil {
-		return fmt.Errorf("failed to update package lists: %w", err)
-	}
+				// Update lockfile with new versions
+				lockfile := NewStateManager(s.configPath)
+				if err := lockfile.Load(); err != nil && s.verbose {
+					fmt.Printf("Note: could not load lockfile: %v\n", err)
+				}
 
-	// Upgrade managed packages
-	if err := manager.Upgrade(allPackages); err != nil {
-		return fmt.Errorf("failed to upgrade packages: %w", err)
-	}
+				for _, pkg := range allPackages {
+					version, err := GetInstalledVersion(pkg)
+					if err == nil {
+						lockfile.SetPackageVersion(pkg, version)
+					}
+				}
 
-	// Update lockfile with new versions
-	lockfile := NewStateManager(s.configPath)
-	if err := lockfile.Load(); err != nil && s.verbose {
-		fmt.Printf("Note: could not load lockfile: %v\n", err)
-	}
-
-	for _, pkg := range allPackages {
-		version, err := GetInstalledVersion(pkg)
-		if err == nil {
-			lockfile.SetPackageVersion(pkg, version)
+				if err := lockfile.Save(); err != nil {
+					fmt.Printf("Warning: failed to update lockfile: %v\n", err)
+				}
+			}
 		}
 	}
 
-	if err := lockfile.Save(); err != nil {
-		fmt.Printf("Warning: failed to update lockfile: %v\n", err)
+	if hasGit {
+		if err := s.updateGit(); err != nil {
+			return fmt.Errorf("error updating git repos: %w", err)
+		}
+	}
+
+	if !hasApt && !hasGit {
+		fmt.Println("No packages or git repos configured")
+		return nil
 	}
 
 	fmt.Println("Done!")
@@ -661,6 +678,11 @@ func (s *Settle) List() error {
 		}
 	}
 
+	// List Git repos
+	if len(s.config.Git) > 0 {
+		s.listGit()
+	}
+
 	return nil
 }
 
@@ -901,4 +923,109 @@ func (s *Settle) applyDotfiles() error {
 	}
 
 	return nil
+}
+
+// applyGit clones missing git repos
+func (s *Settle) applyGit() error {
+	fmt.Printf("\nChecking %d git repos...\n", len(s.config.Git))
+
+	var statuses []PackageStatus
+	for _, repo := range s.config.Git {
+		dest := expandPath(repo.Dest)
+		gitDir := filepath.Join(dest, ".git")
+
+		info, err := os.Stat(dest)
+		if err == nil {
+			// Destination exists
+			if info.IsDir() {
+				if _, err := os.Stat(gitDir); err == nil {
+					// Has .git — already cloned
+					statuses = append(statuses, PackageStatus{Name: repo.Dest, Status: StatusSkipped})
+					continue
+				}
+				// Directory exists but not a repo
+				return fmt.Errorf("destination %s exists but is not a git repository", dest)
+			}
+			// Exists but is a file
+			return fmt.Errorf("destination %s exists but is not a directory", dest)
+		}
+
+		// Destination doesn't exist — clone it
+		if s.dryRun {
+			fmt.Printf("[dry-run] Would clone: %s -> %s\n", repo.URL, repo.Dest)
+			statuses = append(statuses, PackageStatus{Name: repo.Dest, Status: StatusInstalled})
+			continue
+		}
+
+		if err := GitClone(repo.URL, dest, s.verbose); err != nil {
+			return fmt.Errorf("failed to clone %s: %w", repo.URL, err)
+		}
+		statuses = append(statuses, PackageStatus{Name: repo.Dest, Status: StatusInstalled})
+	}
+
+	PrintPackageTable(statuses)
+	return nil
+}
+
+// updateGit pulls latest changes for all cloned git repos
+func (s *Settle) updateGit() error {
+	fmt.Printf("\nUpdating %d git repos...\n", len(s.config.Git))
+
+	for _, repo := range s.config.Git {
+		dest := expandPath(repo.Dest)
+		gitDir := filepath.Join(dest, ".git")
+
+		if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+			fmt.Printf("Warning: %s not cloned, run settle apply first\n", repo.Dest)
+			continue
+		}
+
+		if s.dryRun {
+			fmt.Printf("[dry-run] Would pull: %s\n", repo.Dest)
+			continue
+		}
+
+		if err := GitPullRepo(dest, s.verbose); err != nil {
+			return fmt.Errorf("failed to pull %s: %w", repo.Dest, err)
+		}
+	}
+
+	return nil
+}
+
+// listGit lists all git repos and their status
+func (s *Settle) listGit() {
+	red := color.New(color.FgRed)
+	green := color.New(color.FgGreen)
+
+	var items []ListItem
+	for _, repo := range s.config.Git {
+		dest := expandPath(repo.Dest)
+		gitDir := filepath.Join(dest, ".git")
+
+		var item ListItem
+		item.Name = repo.Dest
+
+		info, err := os.Stat(dest)
+		if os.IsNotExist(err) {
+			item.Status = "missing"
+			item.Color = red
+		} else if err != nil {
+			item.Status = fmt.Sprintf("error: %v", err)
+			item.Color = red
+		} else if !info.IsDir() {
+			item.Status = "not a directory"
+			item.Color = red
+		} else if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+			item.Status = "not a git repo"
+			item.Color = red
+		} else {
+			item.Status = "cloned"
+			item.Color = green
+		}
+
+		items = append(items, item)
+	}
+
+	PrintListTable("Git Repos", items)
 }

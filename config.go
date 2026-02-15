@@ -31,10 +31,16 @@ type Dotfile struct {
 	Mode string `toml:"mode"` // "link" (default) or "copy"
 }
 
+type GitRepo struct {
+	URL  string `toml:"url"`
+	Dest string `toml:"dest"`
+}
+
 // Config represents an entire user's config document.
 type Config struct {
 	Apt      *AptConfig      `toml:"apt"`
 	Dotfiles *DotfilesConfig `toml:"dotfiles"`
+	Git      []GitRepo       `toml:"git"`
 	// Future managers:
 	// Cargo  *CargoConfig  `toml:"cargo"`
 	// Go     *GoConfig     `toml:"go"`

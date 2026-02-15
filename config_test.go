@@ -117,3 +117,34 @@ dest = "~/.vimrc"
 	assert.Equal(t, 1, len(cfg.Dotfiles.Files))
 }
 
+func TestLoadConfig_ValidGit(t *testing.T) {
+	path := withTempConfig(t, `
+[[git]]
+url = "https://github.com/tmux-plugins/tpm"
+dest = "~/.tmux/plugins/tpm"
+
+[[git]]
+url = "https://github.com/user/repo"
+dest = "~/projects/repo"
+`)
+	cfg, err := loadConfig(path)
+	require.NoError(t, err)
+
+	assert.Equal(t, 2, len(cfg.Git))
+	assert.Equal(t, "https://github.com/tmux-plugins/tpm", cfg.Git[0].URL)
+	assert.Equal(t, "~/.tmux/plugins/tpm", cfg.Git[0].Dest)
+	assert.Equal(t, "https://github.com/user/repo", cfg.Git[1].URL)
+	assert.Equal(t, "~/projects/repo", cfg.Git[1].Dest)
+}
+
+func TestLoadConfig_EmptyGit(t *testing.T) {
+	path := withTempConfig(t, `
+[apt]
+packages = ["vim"]
+`)
+	cfg, err := loadConfig(path)
+	require.NoError(t, err)
+
+	assert.Equal(t, 0, len(cfg.Git))
+}
+

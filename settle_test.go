@@ -22,7 +22,7 @@ func TestApply_NoConfig(t *testing.T) {
 	out := captureOutput(t, func() {
 		err := s.Apply()
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "no packages or dotfiles configured")
+		assert.Contains(t, err.Error(), "no packages, dotfiles, or git repos configured")
 	})
 	_ = out
 }
@@ -1224,7 +1224,7 @@ func TestUpdate_NoPackages(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	assert.Contains(t, out, "No packages configured")
+	assert.Contains(t, out, "No packages or git repos configured")
 }
 
 func TestUpdate_EmptyPackages(t *testing.T) {
@@ -1236,7 +1236,7 @@ func TestUpdate_EmptyPackages(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	assert.Contains(t, out, "No packages to update")
+	assert.Contains(t, out, "Done!")
 }
 
 func TestUpdate_DryRun(t *testing.T) {
@@ -2841,4 +2841,319 @@ packages = ["vim"]
 	})
 
 	assert.Contains(t, out, "All packages already in config and installed")
+}
+
+// --- Git Apply tests ---
+
+func TestApplyGit_ClonesMissing(t *testing.T) {
+	saveMocks(t)
+
+	// Create a bare repo as the "remote"
+	remote := t.TempDir()
+	run(t, remote, "git", "init", "--bare")
+
+	scratch := t.TempDir()
+	run(t, scratch, "git", "clone", remote, "work")
+	work := filepath.Join(scratch, "work")
+	run(t, work, "git", "config", "user.email", "test@test.com")
+	run(t, work, "git", "config", "user.name", "Test")
+	os.WriteFile(filepath.Join(work, "README.md"), []byte("hello"), 0o644)
+	run(t, work, "git", "add", ".")
+	run(t, work, "git", "commit", "-m", "init")
+	run(t, work, "git", "push")
+
+	dest := filepath.Join(t.TempDir(), "cloned")
+
+	configPath := withTempConfig(t, fmt.Sprintf(`
+[[git]]
+url = "%s"
+dest = "%s"
+`, remote, dest))
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		err := s.Apply()
+		require.NoError(t, err)
+	})
+
+	assert.Contains(t, out, "Checking 1 git repos")
+	assert.Contains(t, out, "Done!")
+
+	// Verify clone happened
+	_, err := os.Stat(filepath.Join(dest, ".git"))
+	assert.NoError(t, err)
+	data, _ := os.ReadFile(filepath.Join(dest, "README.md"))
+	assert.Equal(t, "hello", string(data))
+}
+
+func TestApplyGit_SkipsExisting(t *testing.T) {
+	saveMocks(t)
+
+	// Create a bare repo and clone it to dest
+	remote := t.TempDir()
+	run(t, remote, "git", "init", "--bare")
+
+	scratch := t.TempDir()
+	run(t, scratch, "git", "clone", remote, "work")
+	work := filepath.Join(scratch, "work")
+	run(t, work, "git", "config", "user.email", "test@test.com")
+	run(t, work, "git", "config", "user.name", "Test")
+	os.WriteFile(filepath.Join(work, "README.md"), []byte("hello"), 0o644)
+	run(t, work, "git", "add", ".")
+	run(t, work, "git", "commit", "-m", "init")
+	run(t, work, "git", "push")
+
+	// Pre-clone to dest
+	dest := filepath.Join(t.TempDir(), "cloned")
+	run(t, filepath.Dir(dest), "git", "clone", remote, dest)
+
+	configPath := withTempConfig(t, fmt.Sprintf(`
+[[git]]
+url = "%s"
+dest = "%s"
+`, remote, dest))
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		err := s.Apply()
+		require.NoError(t, err)
+	})
+
+	assert.Contains(t, out, "1 packages already installed")
+	assert.Contains(t, out, "Done!")
+}
+
+func TestApplyGit_DryRun(t *testing.T) {
+	saveMocks(t)
+
+	remote := t.TempDir()
+	run(t, remote, "git", "init", "--bare")
+
+	dest := filepath.Join(t.TempDir(), "cloned")
+
+	configPath := withTempConfig(t, fmt.Sprintf(`
+[[git]]
+url = "%s"
+dest = "%s"
+`, remote, dest))
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, true)
+
+	out := captureOutput(t, func() {
+		err := s.Apply()
+		require.NoError(t, err)
+	})
+
+	assert.Contains(t, out, "[dry-run] Would clone")
+
+	// Verify nothing was actually cloned
+	_, err := os.Stat(dest)
+	assert.True(t, os.IsNotExist(err))
+}
+
+func TestApplyGit_DestNotRepo(t *testing.T) {
+	saveMocks(t)
+
+	// Create a directory that is NOT a git repo
+	dest := t.TempDir()
+
+	configPath := withTempConfig(t, fmt.Sprintf(`
+[[git]]
+url = "https://example.com/repo.git"
+dest = "%s"
+`, dest))
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	captureOutput(t, func() {
+		err := s.Apply()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not a git repository")
+	})
+}
+
+func TestApplyGit_DestIsFile(t *testing.T) {
+	saveMocks(t)
+
+	// Create a file at the dest path
+	dest := filepath.Join(t.TempDir(), "file")
+	os.WriteFile(dest, []byte("not a dir"), 0o644)
+
+	configPath := withTempConfig(t, fmt.Sprintf(`
+[[git]]
+url = "https://example.com/repo.git"
+dest = "%s"
+`, dest))
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	captureOutput(t, func() {
+		err := s.Apply()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not a directory")
+	})
+}
+
+// --- Git Update tests ---
+
+func TestUpdateGit_PullsExisting(t *testing.T) {
+	saveMocks(t)
+
+	// Create "remote" repo
+	remote := t.TempDir()
+	run(t, remote, "git", "init", "--bare")
+
+	// Clone and set up
+	parent := t.TempDir()
+	dest := filepath.Join(parent, "repo")
+	run(t, parent, "git", "clone", remote, dest)
+	run(t, dest, "git", "config", "user.email", "test@test.com")
+	run(t, dest, "git", "config", "user.name", "Test")
+	os.WriteFile(filepath.Join(dest, "file.txt"), []byte("initial"), 0o644)
+	run(t, dest, "git", "add", ".")
+	run(t, dest, "git", "commit", "-m", "initial")
+	run(t, dest, "git", "push", "-u", "origin", "HEAD")
+
+	// Push new commit from another clone
+	other := filepath.Join(parent, "other")
+	run(t, parent, "git", "clone", remote, other)
+	run(t, other, "git", "config", "user.email", "test@test.com")
+	run(t, other, "git", "config", "user.name", "Test")
+	os.WriteFile(filepath.Join(other, "new.txt"), []byte("new"), 0o644)
+	run(t, other, "git", "add", ".")
+	run(t, other, "git", "commit", "-m", "add new file")
+	run(t, other, "git", "push")
+
+	configPath := withTempConfig(t, fmt.Sprintf(`
+[[git]]
+url = "%s"
+dest = "%s"
+`, remote, dest))
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		err := s.Update()
+		require.NoError(t, err)
+	})
+
+	assert.Contains(t, out, "Updating 1 git repos")
+	assert.Contains(t, out, "Done!")
+
+	// Verify the new file arrived
+	data, err := os.ReadFile(filepath.Join(dest, "new.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "new", string(data))
+}
+
+func TestUpdateGit_NotCloned(t *testing.T) {
+	saveMocks(t)
+
+	dest := filepath.Join(t.TempDir(), "missing")
+
+	configPath := withTempConfig(t, fmt.Sprintf(`
+[[git]]
+url = "https://example.com/repo.git"
+dest = "%s"
+`, dest))
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		err := s.Update()
+		require.NoError(t, err)
+	})
+
+	assert.Contains(t, out, "not cloned, run settle apply first")
+}
+
+func TestUpdateGit_DryRun(t *testing.T) {
+	saveMocks(t)
+
+	// Create a cloned repo
+	remote := t.TempDir()
+	run(t, remote, "git", "init", "--bare")
+
+	parent := t.TempDir()
+	dest := filepath.Join(parent, "repo")
+	run(t, parent, "git", "clone", remote, dest)
+	run(t, dest, "git", "config", "user.email", "test@test.com")
+	run(t, dest, "git", "config", "user.name", "Test")
+	os.WriteFile(filepath.Join(dest, "file.txt"), []byte("data"), 0o644)
+	run(t, dest, "git", "add", ".")
+	run(t, dest, "git", "commit", "-m", "init")
+	run(t, dest, "git", "push", "-u", "origin", "HEAD")
+
+	configPath := withTempConfig(t, fmt.Sprintf(`
+[[git]]
+url = "%s"
+dest = "%s"
+`, remote, dest))
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, true)
+
+	out := captureOutput(t, func() {
+		err := s.Update()
+		require.NoError(t, err)
+	})
+
+	assert.Contains(t, out, "[dry-run] Would pull")
+}
+
+// --- Git List tests ---
+
+func TestListGit(t *testing.T) {
+	saveMocks(t)
+
+	// Create a cloned repo
+	remote := t.TempDir()
+	run(t, remote, "git", "init", "--bare")
+
+	parent := t.TempDir()
+	clonedDest := filepath.Join(parent, "cloned")
+	run(t, parent, "git", "clone", remote, clonedDest)
+
+	// Missing destination
+	missingDest := filepath.Join(parent, "missing")
+
+	// Not a repo (regular directory)
+	notRepoDest := filepath.Join(parent, "notagitrepo")
+	os.MkdirAll(notRepoDest, 0o755)
+
+	configPath := withTempConfig(t, fmt.Sprintf(`
+[[git]]
+url = "%s"
+dest = "%s"
+
+[[git]]
+url = "https://example.com/repo.git"
+dest = "%s"
+
+[[git]]
+url = "https://example.com/repo2.git"
+dest = "%s"
+`, remote, clonedDest, missingDest, notRepoDest))
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		err := s.List()
+		require.NoError(t, err)
+	})
+
+	assert.Contains(t, out, "Git Repos:")
+	assert.Contains(t, out, "cloned")
+	assert.Contains(t, out, "missing")
+	assert.Contains(t, out, "not a git repo")
 }

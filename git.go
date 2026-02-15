@@ -5,12 +5,43 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 )
+
+// GitClone clones a git repository to the given destination path.
+func GitClone(url, dest string, verbose bool) error {
+	cmd := exec.Command("git", "clone", url, dest)
+	if verbose {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+	}
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git clone failed: %w", err)
+	}
+
+	return nil
+}
+
+// GitPullRepo pulls latest changes in the given directory using --ff-only.
+// If the working tree is dirty or pull fails, the error is returned as-is.
+func GitPullRepo(dir string, verbose bool) error {
+	pull := exec.Command("git", "-C", dir, "pull", "--ff-only")
+	if verbose {
+		pull.Stdout = os.Stdout
+		pull.Stderr = os.Stderr
+	}
+
+	if err := pull.Run(); err != nil {
+		return fmt.Errorf("git pull failed in %s: %w", dir, err)
+	}
+
+	return nil
+}
 
 // GitPull attempts to pull latest changes in the config directory.
 // Returns nil if no .git directory exists (not a repo, nothing to do).
-// Returns an error if the working tree is dirty or pull fails.
+// If the working tree is dirty but there's nothing to pull, succeeds silently.
+// If a pull conflicts with dirty files, git itself will return a descriptive error.
 func GitPull(configPath string, verbose bool) error {
 	dir := filepath.Dir(configPath)
 	gitDir := filepath.Join(dir, ".git")
@@ -20,17 +51,7 @@ func GitPull(configPath string, verbose bool) error {
 		return nil
 	}
 
-	// Check for uncommitted changes
-	status := exec.Command("git", "-C", dir, "status", "--porcelain")
-	output, err := status.Output()
-	if err != nil {
-		return fmt.Errorf("failed to check git status: %w", err)
-	}
-	if len(strings.TrimSpace(string(output))) > 0 {
-		return fmt.Errorf("config repo has uncommitted changes — commit or stash before running settle")
-	}
-
-	// Pull latest
+	// Pull latest — git handles dirty working tree conflicts naturally
 	pull := exec.Command("git", "-C", dir, "pull", "--ff-only")
 	if verbose {
 		pull.Stdout = os.Stdout
