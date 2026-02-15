@@ -179,7 +179,7 @@ func (s *StateManager) SyncPackageVersions(packages []string) error {
 	results := make(chan versionResult, len(packages))
 
 	// Start workers
-	for i := 0; i < workers; i++ {
+	for range workers {
 		go func() {
 			for pkg := range jobs {
 				version, err := GetInstalledVersion(pkg)

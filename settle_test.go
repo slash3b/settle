@@ -506,10 +506,10 @@ func TestApply_Dotfiles(t *testing.T) {
 
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("set nocompatible"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
 
@@ -563,10 +563,10 @@ func TestApply_DotfilesDryRun(t *testing.T) {
 
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("set nocompatible"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
 
@@ -596,10 +596,10 @@ func TestApply_DotfilesVerbose(t *testing.T) {
 
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("set nocompatible"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
 
@@ -628,7 +628,7 @@ func TestApply_DotfilesWithErrors(t *testing.T) {
 
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	configPath := withTempConfig(t, `
 [dotfiles]
@@ -1389,13 +1389,13 @@ func TestList_Dotfiles(t *testing.T) {
 
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("set nocompatible"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
-	os.Symlink(srcFile, destFile)
+	require.NoError(t, os.Symlink(srcFile, destFile))
 
 	configPath := withTempConfig(t, `
 [dotfiles]
@@ -1595,15 +1595,15 @@ func TestList_DotfileStatuses(t *testing.T) {
 
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	// Create source files
-	os.WriteFile(filepath.Join(srcDir, "vimrc"), []byte("content"), 0o644)
-	os.WriteFile(filepath.Join(srcDir, "tmux.conf"), []byte("content"), 0o644)
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "vimrc"), []byte("content"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "tmux.conf"), []byte("content"), 0o644))
 
 	// vimrc: correct symlink
 	vimDest := filepath.Join(dir, ".vimrc")
-	os.Symlink(filepath.Join(srcDir, "vimrc"), vimDest)
+	require.NoError(t, os.Symlink(filepath.Join(srcDir, "vimrc"), vimDest))
 
 	// tmux: missing
 	tmuxDest := filepath.Join(dir, ".tmux.conf")
@@ -1655,7 +1655,7 @@ packages = ["vim"]
 
 	// Verify lockfile was written
 	sm := NewStateManager(configPath)
-	sm.Load()
+	require.NoError(t, sm.Load())
 	v, ok := sm.GetPackageVersion("vim")
 	assert.Equal(t, true, ok)
 	assert.Equal(t, "9.0.1", v)
@@ -1704,7 +1704,7 @@ func TestSyncState_LoadError(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
 	lockPath := filepath.Join(dir, "lockfile.json")
-	os.WriteFile(lockPath, []byte("not json{{{"), 0o644)
+	require.NoError(t, os.WriteFile(lockPath, []byte("not json{{{"), 0o644))
 
 	cfg := &Config{Apt: &AptConfig{Packages: []string{"vim"}}}
 	s := NewSettle(cfg, configPath, false, false)
@@ -1738,13 +1738,13 @@ func TestApply_ApplyDotfilesError(t *testing.T) {
 
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	// Source exists, but dest is a directory — will error in link mode
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("content"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
 	destDir := filepath.Join(dir, ".vimrc")
-	os.MkdirAll(destDir, 0o755)
+	require.NoError(t, os.MkdirAll(destDir, 0o755))
 
 	configPath := withTempConfig(t, `
 [dotfiles]
@@ -1782,14 +1782,14 @@ func TestApply_SyncStateError(t *testing.T) {
 
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
-	os.WriteFile(configPath, []byte(`
+	require.NoError(t, os.WriteFile(configPath, []byte(`
 [apt]
 packages = ["vim"]
-`), 0o644)
+`), 0o644))
 
 	// Make the lockfile unreadable so syncState fails
 	lockPath := filepath.Join(dir, "lockfile.json")
-	os.WriteFile(lockPath, []byte("not json{{{"), 0o644)
+	require.NoError(t, os.WriteFile(lockPath, []byte("not json{{{"), 0o644))
 
 	cfg, _ := loadConfig(configPath)
 	s := NewSettle(cfg, configPath, false, false)
@@ -1993,12 +1993,12 @@ func TestInstall_LockfileLoadVerbose(t *testing.T) {
 
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
-	os.WriteFile(configPath, []byte(`
+	require.NoError(t, os.WriteFile(configPath, []byte(`
 [apt]
 packages = ["vim"]
-`), 0o644)
+`), 0o644))
 	// Corrupt lockfile
-	os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte("bad json{{{"), 0o644)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte("bad json{{{"), 0o644))
 
 	cfg, _ := loadConfig(configPath)
 	s := NewSettle(cfg, configPath, true, false)
@@ -2084,12 +2084,12 @@ func TestRemove_LockfileLoadVerbose(t *testing.T) {
 
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
-	os.WriteFile(configPath, []byte(`
+	require.NoError(t, os.WriteFile(configPath, []byte(`
 [apt]
 packages = ["vim"]
-`), 0o644)
+`), 0o644))
 	// Corrupt lockfile
-	os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte("bad json"), 0o644)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte("bad json"), 0o644))
 
 	cfg, _ := loadConfig(configPath)
 	s := NewSettle(cfg, configPath, true, false)
@@ -2172,12 +2172,12 @@ func TestUpdate_LockfileLoadVerbose(t *testing.T) {
 
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
-	os.WriteFile(configPath, []byte(`
+	require.NoError(t, os.WriteFile(configPath, []byte(`
 [apt]
 packages = ["vim"]
-`), 0o644)
+`), 0o644))
 	// Corrupt lockfile
-	os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte("bad json{{{"), 0o644)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte("bad json{{{"), 0o644))
 
 	cfg, _ := loadConfig(configPath)
 	s := NewSettle(cfg, configPath, true, false)
@@ -2229,12 +2229,12 @@ func TestListApt_VerboseStateLoadError(t *testing.T) {
 
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
-	os.WriteFile(configPath, []byte(`
+	require.NoError(t, os.WriteFile(configPath, []byte(`
 [apt]
 packages = ["vim"]
-`), 0o644)
+`), 0o644))
 	// Corrupt lockfile
-	os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte("bad json"), 0o644)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte("bad json"), 0o644))
 
 	cfg, _ := loadConfig(configPath)
 	s := NewSettle(cfg, configPath, true, false)
@@ -2254,41 +2254,41 @@ func TestListDotfiles_AllStatuses(t *testing.T) {
 
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	// Source files
-	os.WriteFile(filepath.Join(srcDir, "linked"), []byte("content"), 0o644)
-	os.WriteFile(filepath.Join(srcDir, "wronglink"), []byte("content"), 0o644)
-	os.WriteFile(filepath.Join(srcDir, "fileatdest"), []byte("content"), 0o644)
-	os.WriteFile(filepath.Join(srcDir, "diratdest"), []byte("content"), 0o644)
-	os.WriteFile(filepath.Join(srcDir, "copygood"), []byte("same"), 0o644)
-	os.WriteFile(filepath.Join(srcDir, "copyold"), []byte("new content"), 0o644)
-	os.WriteFile(filepath.Join(srcDir, "missing"), []byte("content"), 0o644)
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "linked"), []byte("content"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "wronglink"), []byte("content"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "fileatdest"), []byte("content"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "diratdest"), []byte("content"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "copygood"), []byte("same"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "copyold"), []byte("new content"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "missing"), []byte("content"), 0o644))
 
 	// Setup various statuses
 	// 1. Correct symlink
 	linkedDest := filepath.Join(dir, "linked")
-	os.Symlink(filepath.Join(srcDir, "linked"), linkedDest)
+	require.NoError(t, os.Symlink(filepath.Join(srcDir, "linked"), linkedDest))
 
 	// 2. Incorrect symlink
 	wrongDest := filepath.Join(dir, "wronglink")
-	os.Symlink("/wrong/target", wrongDest)
+	require.NoError(t, os.Symlink("/wrong/target", wrongDest))
 
 	// 3. File at dest (link mode)
 	fileDest := filepath.Join(dir, "fileatdest")
-	os.WriteFile(fileDest, []byte("existing file"), 0o644)
+	require.NoError(t, os.WriteFile(fileDest, []byte("existing file"), 0o644))
 
 	// 4. Dir at dest
 	dirDest := filepath.Join(dir, "diratdest")
-	os.MkdirAll(dirDest, 0o755)
+	require.NoError(t, os.MkdirAll(dirDest, 0o755))
 
 	// 5. Copy correct
 	copyGoodDest := filepath.Join(dir, "copygood")
-	os.WriteFile(copyGoodDest, []byte("same"), 0o644)
+	require.NoError(t, os.WriteFile(copyGoodDest, []byte("same"), 0o644))
 
 	// 6. Copy outdated
 	copyOldDest := filepath.Join(dir, "copyold")
-	os.WriteFile(copyOldDest, []byte("old content"), 0o644)
+	require.NoError(t, os.WriteFile(copyOldDest, []byte("old content"), 0o644))
 
 	// 7. Missing
 	missingDest := filepath.Join(dir, "missing_link")
@@ -2351,7 +2351,7 @@ func TestListDotfiles_ErrorStatus(t *testing.T) {
 
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	// Source doesn't exist — will produce error
 	configPath := withTempConfig(t, `
@@ -2392,10 +2392,10 @@ func TestApply_LockfileLoadVerbose(t *testing.T) {
 
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
-	os.WriteFile(configPath, []byte(`
+	require.NoError(t, os.WriteFile(configPath, []byte(`
 [apt]
 packages = ["vim"]
-`), 0o644)
+`), 0o644))
 	// No lockfile — verbose should say "no lockfile found"
 
 	cfg, _ := loadConfig(configPath)
@@ -2464,16 +2464,16 @@ func TestApply_UpgradeLockfileSaveWarning(t *testing.T) {
 
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
-	os.WriteFile(configPath, []byte(`
+	require.NoError(t, os.WriteFile(configPath, []byte(`
 [apt]
 packages = ["vim"]
-`), 0o644)
+`), 0o644))
 	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.2","installed_at":"2024-01-01T00:00:00Z"}}}`)
 
 	// Make the lockfile read-only so save fails after upgrade
 	lockPath := filepath.Join(dir, "lockfile.json")
-	os.Chmod(lockPath, 0o444)
-	t.Cleanup(func() { os.Chmod(lockPath, 0o644) })
+	require.NoError(t, os.Chmod(lockPath, 0o444))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(lockPath, 0o644)) })
 
 	cfg, _ := loadConfig(configPath)
 	s := NewSettle(cfg, configPath, false, false)
@@ -2505,17 +2505,17 @@ func TestApply_RemoveLockfileSaveWarning(t *testing.T) {
 
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
-	os.WriteFile(configPath, []byte(`
+	require.NoError(t, os.WriteFile(configPath, []byte(`
 [apt]
 packages = ["vim"]
-`), 0o644)
+`), 0o644))
 	// Lockfile has vim AND git (git not in config, will be removed)
 	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"},"git":{"version":"2.40.0","installed_at":"2024-01-01T00:00:00Z"}}}`)
 
 	// Make the lockfile read-only so save after remove fails
 	lockPath := filepath.Join(dir, "lockfile.json")
-	os.Chmod(lockPath, 0o444)
-	t.Cleanup(func() { os.Chmod(lockPath, 0o644) })
+	require.NoError(t, os.Chmod(lockPath, 0o444))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(lockPath, 0o644)) })
 
 	cfg, _ := loadConfig(configPath)
 	s := NewSettle(cfg, configPath, false, false)
@@ -2570,16 +2570,16 @@ func TestRemove_LockfileSaveWarning(t *testing.T) {
 
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
-	os.WriteFile(configPath, []byte(`
+	require.NoError(t, os.WriteFile(configPath, []byte(`
 [apt]
 packages = ["vim"]
-`), 0o644)
+`), 0o644))
 	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
 
 	// Make the lockfile read-only so save fails
 	lockPath := filepath.Join(dir, "lockfile.json")
-	os.Chmod(lockPath, 0o444)
-	t.Cleanup(func() { os.Chmod(lockPath, 0o644) })
+	require.NoError(t, os.Chmod(lockPath, 0o444))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(lockPath, 0o644)) })
 
 	cfg, _ := loadConfig(configPath)
 	s := NewSettle(cfg, configPath, false, false)
@@ -2668,12 +2668,12 @@ func TestApply_VerboseLockfileNotFound(t *testing.T) {
 
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
-	os.WriteFile(configPath, []byte(`
+	require.NoError(t, os.WriteFile(configPath, []byte(`
 [apt]
 packages = ["vim"]
-`), 0o644)
+`), 0o644))
 	// Write a corrupt lockfile so Load() returns error
-	os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte("{{bad"), 0o644)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte("{{bad"), 0o644))
 
 	cfg, _ := loadConfig(configPath)
 	s := NewSettle(cfg, configPath, true, false)
@@ -2751,8 +2751,8 @@ func TestApply_BothAptAndDotfiles(t *testing.T) {
 
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
-	os.WriteFile(filepath.Join(srcDir, "vimrc"), []byte("content"), 0o644)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "vimrc"), []byte("content"), 0o644))
 	destFile := filepath.Join(dir, ".vimrc")
 
 	configPath := withTempConfig(t, `
@@ -2786,14 +2786,14 @@ func TestApply_DotfilesAlreadyCorrect(t *testing.T) {
 
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("set nocompatible"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
 
 	// Destination already has correct symlink
 	destFile := filepath.Join(dir, ".vimrc")
-	os.Symlink(srcFile, destFile)
+	require.NoError(t, os.Symlink(srcFile, destFile))
 
 	configPath := withTempConfig(t, `
 [dotfiles]
@@ -2857,7 +2857,7 @@ func TestApplyGit_ClonesMissing(t *testing.T) {
 	work := filepath.Join(scratch, "work")
 	run(t, work, "git", "config", "user.email", "test@test.com")
 	run(t, work, "git", "config", "user.name", "Test")
-	os.WriteFile(filepath.Join(work, "README.md"), []byte("hello"), 0o644)
+	require.NoError(t, os.WriteFile(filepath.Join(work, "README.md"), []byte("hello"), 0o644))
 	run(t, work, "git", "add", ".")
 	run(t, work, "git", "commit", "-m", "init")
 	run(t, work, "git", "push")
@@ -2900,7 +2900,7 @@ func TestApplyGit_SkipsExisting(t *testing.T) {
 	work := filepath.Join(scratch, "work")
 	run(t, work, "git", "config", "user.email", "test@test.com")
 	run(t, work, "git", "config", "user.name", "Test")
-	os.WriteFile(filepath.Join(work, "README.md"), []byte("hello"), 0o644)
+	require.NoError(t, os.WriteFile(filepath.Join(work, "README.md"), []byte("hello"), 0o644))
 	run(t, work, "git", "add", ".")
 	run(t, work, "git", "commit", "-m", "init")
 	run(t, work, "git", "push")
@@ -2983,7 +2983,7 @@ func TestApplyGit_DestIsFile(t *testing.T) {
 
 	// Create a file at the dest path
 	dest := filepath.Join(t.TempDir(), "file")
-	os.WriteFile(dest, []byte("not a dir"), 0o644)
+	require.NoError(t, os.WriteFile(dest, []byte("not a dir"), 0o644))
 
 	configPath := withTempConfig(t, fmt.Sprintf(`
 [[git]]
@@ -3016,7 +3016,7 @@ func TestUpdateGit_PullsExisting(t *testing.T) {
 	run(t, parent, "git", "clone", remote, dest)
 	run(t, dest, "git", "config", "user.email", "test@test.com")
 	run(t, dest, "git", "config", "user.name", "Test")
-	os.WriteFile(filepath.Join(dest, "file.txt"), []byte("initial"), 0o644)
+	require.NoError(t, os.WriteFile(filepath.Join(dest, "file.txt"), []byte("initial"), 0o644))
 	run(t, dest, "git", "add", ".")
 	run(t, dest, "git", "commit", "-m", "initial")
 	run(t, dest, "git", "push", "-u", "origin", "HEAD")
@@ -3026,7 +3026,7 @@ func TestUpdateGit_PullsExisting(t *testing.T) {
 	run(t, parent, "git", "clone", remote, other)
 	run(t, other, "git", "config", "user.email", "test@test.com")
 	run(t, other, "git", "config", "user.name", "Test")
-	os.WriteFile(filepath.Join(other, "new.txt"), []byte("new"), 0o644)
+	require.NoError(t, os.WriteFile(filepath.Join(other, "new.txt"), []byte("new"), 0o644))
 	run(t, other, "git", "add", ".")
 	run(t, other, "git", "commit", "-m", "add new file")
 	run(t, other, "git", "push")
@@ -3088,7 +3088,7 @@ func TestUpdateGit_DryRun(t *testing.T) {
 	run(t, parent, "git", "clone", remote, dest)
 	run(t, dest, "git", "config", "user.email", "test@test.com")
 	run(t, dest, "git", "config", "user.name", "Test")
-	os.WriteFile(filepath.Join(dest, "file.txt"), []byte("data"), 0o644)
+	require.NoError(t, os.WriteFile(filepath.Join(dest, "file.txt"), []byte("data"), 0o644))
 	run(t, dest, "git", "add", ".")
 	run(t, dest, "git", "commit", "-m", "init")
 	run(t, dest, "git", "push", "-u", "origin", "HEAD")
@@ -3128,7 +3128,7 @@ func TestListGit(t *testing.T) {
 
 	// Not a repo (regular directory)
 	notRepoDest := filepath.Join(parent, "notagitrepo")
-	os.MkdirAll(notRepoDest, 0o755)
+	require.NoError(t, os.MkdirAll(notRepoDest, 0o755))
 
 	configPath := withTempConfig(t, fmt.Sprintf(`
 [[git]]
@@ -3165,7 +3165,7 @@ func TestApplyGo_SkipsExisting(t *testing.T) {
 
 	binDir := t.TempDir()
 	// Pre-create the binary
-	os.WriteFile(filepath.Join(binDir, "golangci-lint"), []byte("fake"), 0o755)
+	require.NoError(t, os.WriteFile(filepath.Join(binDir, "golangci-lint"), []byte("fake"), 0o755))
 
 	GoBinPath = func() (string, error) { return binDir, nil }
 	installCalled := false
@@ -3199,7 +3199,7 @@ func TestApplyGo_UpgradesOutdated(t *testing.T) {
 
 	binDir := t.TempDir()
 	// Pre-create the binary (old version exists)
-	os.WriteFile(filepath.Join(binDir, "golangci-lint"), []byte("fake"), 0o755)
+	require.NoError(t, os.WriteFile(filepath.Join(binDir, "golangci-lint"), []byte("fake"), 0o755))
 
 	GoBinPath = func() (string, error) { return binDir, nil }
 
@@ -3242,7 +3242,7 @@ func TestApplyGo_AdoptsExistingWithoutLockfile(t *testing.T) {
 
 	binDir := t.TempDir()
 	// Binary exists but no lockfile entry
-	os.WriteFile(filepath.Join(binDir, "mytool"), []byte("fake"), 0o755)
+	require.NoError(t, os.WriteFile(filepath.Join(binDir, "mytool"), []byte("fake"), 0o755))
 
 	GoBinPath = func() (string, error) { return binDir, nil }
 
@@ -3273,7 +3273,7 @@ func TestApplyGo_DryRunUpgrade(t *testing.T) {
 	saveMocks(t)
 
 	binDir := t.TempDir()
-	os.WriteFile(filepath.Join(binDir, "golangci-lint"), []byte("fake"), 0o755)
+	require.NoError(t, os.WriteFile(filepath.Join(binDir, "golangci-lint"), []byte("fake"), 0o755))
 
 	GoBinPath = func() (string, error) { return binDir, nil }
 	installCalled := false
@@ -3507,7 +3507,7 @@ func TestListGo(t *testing.T) {
 
 	binDir := t.TempDir()
 	// Create one installed binary
-	os.WriteFile(filepath.Join(binDir, "golangci-lint"), []byte("fake"), 0o755)
+	require.NoError(t, os.WriteFile(filepath.Join(binDir, "golangci-lint"), []byte("fake"), 0o755))
 
 	GoBinPath = func() (string, error) { return binDir, nil }
 
@@ -3541,7 +3541,7 @@ func TestListGo_Outdated(t *testing.T) {
 	saveMocks(t)
 
 	binDir := t.TempDir()
-	os.WriteFile(filepath.Join(binDir, "mytool"), []byte("fake"), 0o755)
+	require.NoError(t, os.WriteFile(filepath.Join(binDir, "mytool"), []byte("fake"), 0o755))
 
 	GoBinPath = func() (string, error) { return binDir, nil }
 
@@ -3568,7 +3568,7 @@ func TestListGo_NotInLockfile(t *testing.T) {
 	saveMocks(t)
 
 	binDir := t.TempDir()
-	os.WriteFile(filepath.Join(binDir, "mytool"), []byte("fake"), 0o755)
+	require.NoError(t, os.WriteFile(filepath.Join(binDir, "mytool"), []byte("fake"), 0o755))
 
 	GoBinPath = func() (string, error) { return binDir, nil }
 

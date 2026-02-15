@@ -750,7 +750,7 @@ func (s *Settle) listApt() error {
 	results := make(chan packageInfo, len(allPackages))
 
 	// Start workers
-	for i := 0; i < workers; i++ {
+	for range workers {
 		go func() {
 			for pkg := range jobs {
 				info := packageInfo{name: pkg, isMissing: missingSet[pkg]}

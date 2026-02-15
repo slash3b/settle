@@ -39,11 +39,12 @@ func TestStateManager_LoadExisting(t *testing.T) {
 			"git": {Version: "2.40.0"},
 		},
 	}
-	data, _ := json.MarshalIndent(state, "", "  ")
-	os.WriteFile(filepath.Join(dir, "lockfile.json"), data, 0o644)
+	data, err := json.MarshalIndent(state, "", "  ")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "lockfile.json"), data, 0o644))
 
 	sm := NewStateManager(configPath)
-	err := sm.Load()
+	err = sm.Load()
 	require.NoError(t, err)
 
 	v, ok := sm.GetPackageVersion("vim")
@@ -58,7 +59,7 @@ func TestStateManager_LoadExisting(t *testing.T) {
 func TestStateManager_LoadCorrupt(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
-	os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte("not json{{{"), 0o644)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte("not json{{{"), 0o644))
 
 	sm := NewStateManager(configPath)
 	err := sm.Load()
@@ -70,9 +71,9 @@ func TestStateManager_LoadReadError(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
 	lockPath := filepath.Join(dir, "lockfile.json")
-	os.WriteFile(lockPath, []byte("{}"), 0o644)
-	os.Chmod(lockPath, 0o000)
-	t.Cleanup(func() { os.Chmod(lockPath, 0o644) })
+	require.NoError(t, os.WriteFile(lockPath, []byte("{}"), 0o644))
+	require.NoError(t, os.Chmod(lockPath, 0o000))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(lockPath, 0o644)) })
 
 	sm := NewStateManager(configPath)
 	err := sm.Load()
@@ -84,7 +85,7 @@ func TestStateManager_Save(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
 	sm := NewStateManager(configPath)
-	sm.Load()
+	require.NoError(t, sm.Load())
 
 	sm.SetPackageVersion("vim", "9.0.1", "apt")
 
@@ -96,7 +97,7 @@ func TestStateManager_Save(t *testing.T) {
 	require.NoError(t, err)
 
 	var state State
-	json.Unmarshal(data, &state)
+	require.NoError(t, json.Unmarshal(data, &state))
 	assert.Equal(t, "9.0.1", state.Packages["vim"].Version)
 }
 
@@ -187,12 +188,12 @@ func TestStateManager_BackfillsEmptyManager(t *testing.T) {
 	configPath := filepath.Join(dir, "config.toml")
 
 	// Write a lockfile without manager field (old format)
-	os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte(`{
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte(`{
 		"packages": {
 			"vim": {"version": "9.0.1", "installed_at": "2026-01-01T00:00:00Z"},
 			"git": {"version": "2.40.0", "installed_at": "2026-01-01T00:00:00Z"}
 		}
-	}`), 0o644)
+	}`), 0o644))
 
 	sm := NewStateManager(configPath)
 	require.NoError(t, sm.Load())

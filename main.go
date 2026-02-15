@@ -1,7 +1,7 @@
 package main
 
 import (
-    "flag"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -11,8 +11,10 @@ import (
 )
 
 // Version and BuildTime are set via ldflags at build time
-var Version = "development"
-var BuildTime = ""
+var (
+	Version   = "development"
+	BuildTime = ""
+)
 
 var (
 	verbose     bool
@@ -92,7 +94,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
-
 
 	// Create the orchestrator
 	settle := NewSettle(cfg, configPath, verbose, dryRun)

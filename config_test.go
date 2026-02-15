@@ -178,4 +178,3 @@ packages = ["vim"]
 
 	assert.Equal(t, 0, len(cfg.Go))
 }
-
