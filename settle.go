@@ -494,10 +494,31 @@ func (s *Settle) applyApt() error {
 	}
 
 	// Add packages that need upgrading to lockfile version
+	var unavailableUpgrades []string
 	for _, pkg := range needUpgrade {
+		lockVersion, ok := lockfile.GetPackageVersion(pkg)
+		if !ok {
+			continue
+		}
+		// Check if the pinned version exists in this machine's repos
+		available, err := GetAvailableVersion(pkg)
+		if err != nil {
+			unavailableUpgrades = append(unavailableUpgrades, fmt.Sprintf("%s=%s (not in repos)", pkg, lockVersion))
+			continue
+		}
+		// If the available version is still lower than lockfile, we can't upgrade to lockfile version
+		if CompareVersions(available, lockVersion) < 0 {
+			unavailableUpgrades = append(unavailableUpgrades, fmt.Sprintf("%s=%s (repo has %s)", pkg, lockVersion, available))
+			continue
+		}
 		installable = append(installable, pkg)
-		if version, ok := lockfile.GetPackageVersion(pkg); ok {
-			versions[pkg] = version
+		versions[pkg] = lockVersion
+	}
+
+	if len(unavailableUpgrades) > 0 {
+		fmt.Printf("\nSkipping %d upgrades (version not available):\n", len(unavailableUpgrades))
+		for _, msg := range unavailableUpgrades {
+			fmt.Printf("  - %s\n", msg)
 		}
 	}
 
@@ -763,7 +784,7 @@ func (s *Settle) listApt() error {
 		// Check if upgraded since last state sync
 		stateVersion, hasState := stateMgr.GetPackageVersion(pkg)
 		if hasState && stateVersion != info.installed {
-			item.Status = fmt.Sprintf("%s (was %s)", item.Status, stateVersion)
+			item.Status = fmt.Sprintf("%s (lockfile: %s)", item.Status, stateVersion)
 		}
 
 		items = append(items, item)

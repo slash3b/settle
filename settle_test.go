@@ -1551,7 +1551,7 @@ packages = ["vim"]
 		require.NoError(t, err)
 	})
 
-	assert.Contains(t, out, "was 9.0.1")
+	assert.Contains(t, out, "lockfile: 9.0.1")
 }
 
 func TestList_PackagesWithPackageSection(t *testing.T) {
