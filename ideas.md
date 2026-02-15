@@ -15,13 +15,9 @@ The philosophy of `settle` is: **"Read the TOML, make the machine match."**
 - [x] Dotfile symlinking - Default mode for config files
 - [x] Dotfile copying - `mode = "copy"` for files that can't be symlinked
 - [x] Post-install hooks - Run commands after package installation
+- [x] Git clone manager - `[[git]]` blocks declare repos to clone on apply, pull on update
 
 ## Not Yet Implemented
-
-### Selective Apply
-- [ ] `settle apply` - Explicit alias for default behavior
-- [ ] `--only dotfiles` (or `settle dots`) - Skip packages, only sync config files
-- [ ] `--only packages` (or `settle soft`) - Skip dotfiles, only install software
 
 ### Package Management CLI
 - [x] `settle install <package>` - Install package, remind user to add to config
@@ -34,12 +30,9 @@ The philosophy of `settle` is: **"Read the TOML, make the machine match."**
 ### Dotfile Management
 - [ ] `settle track <file>` - Adopt a file into managed dotfiles (move to repo, add to config, symlink back)
 
-### Bootstrap
-- [ ] `settle init [url]` - Clone a dotfiles repo and run settle immediately
-
 ## Future Providers
 - [ ] Cargo package manager
-- [ ] Go package manager
+- [x] Go package manager - `[[go]]` blocks with `path` and `version`, installed via `go install`
 
 ## Example User Session
 ```bash

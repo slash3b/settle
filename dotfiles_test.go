@@ -28,8 +28,8 @@ func TestExpandPath_NoTilde(t *testing.T) {
 func TestExpandPath_TildeHomeError(t *testing.T) {
 	// Unset HOME to trigger UserHomeDir error
 	oldHome := os.Getenv("HOME")
-	os.Unsetenv("HOME")
-	t.Cleanup(func() { os.Setenv("HOME", oldHome) })
+	require.NoError(t, os.Unsetenv("HOME"))
+	t.Cleanup(func() { require.NoError(t, os.Setenv("HOME", oldHome)) })
 
 	got := expandPath("~/foo")
 	// When HOME is unset, UserHomeDir may fail, returning path unchanged
@@ -55,8 +55,8 @@ func TestFilesEqual_Same(t *testing.T) {
 	dir := t.TempDir()
 	f1 := filepath.Join(dir, "a.txt")
 	f2 := filepath.Join(dir, "b.txt")
-	os.WriteFile(f1, []byte("hello world"), 0o644)
-	os.WriteFile(f2, []byte("hello world"), 0o644)
+	require.NoError(t, os.WriteFile(f1, []byte("hello world"), 0o644))
+	require.NoError(t, os.WriteFile(f2, []byte("hello world"), 0o644))
 
 	equal, err := filesEqual(f1, f2)
 	require.NoError(t, err)
@@ -67,8 +67,8 @@ func TestFilesEqual_Different(t *testing.T) {
 	dir := t.TempDir()
 	f1 := filepath.Join(dir, "a.txt")
 	f2 := filepath.Join(dir, "b.txt")
-	os.WriteFile(f1, []byte("hello"), 0o644)
-	os.WriteFile(f2, []byte("world"), 0o644)
+	require.NoError(t, os.WriteFile(f1, []byte("hello"), 0o644))
+	require.NoError(t, os.WriteFile(f2, []byte("world"), 0o644))
 
 	equal, err := filesEqual(f1, f2)
 	require.NoError(t, err)
@@ -78,7 +78,7 @@ func TestFilesEqual_Different(t *testing.T) {
 func TestFilesEqual_MissingFile(t *testing.T) {
 	dir := t.TempDir()
 	f1 := filepath.Join(dir, "a.txt")
-	os.WriteFile(f1, []byte("hello"), 0o644)
+	require.NoError(t, os.WriteFile(f1, []byte("hello"), 0o644))
 
 	_, err := filesEqual(f1, filepath.Join(dir, "nonexistent"))
 	require.Error(t, err)
@@ -87,7 +87,7 @@ func TestFilesEqual_MissingFile(t *testing.T) {
 func TestFilesEqual_MissingSrc(t *testing.T) {
 	dir := t.TempDir()
 	f2 := filepath.Join(dir, "b.txt")
-	os.WriteFile(f2, []byte("hello"), 0o644)
+	require.NoError(t, os.WriteFile(f2, []byte("hello"), 0o644))
 
 	_, err := filesEqual(filepath.Join(dir, "nonexistent"), f2)
 	require.Error(t, err)
@@ -98,7 +98,7 @@ func TestCopyFile(t *testing.T) {
 	src := filepath.Join(dir, "src.txt")
 	dest := filepath.Join(dir, "dest.txt")
 
-	os.WriteFile(src, []byte("file contents"), 0o755)
+	require.NoError(t, os.WriteFile(src, []byte("file contents"), 0o755))
 
 	err := copyFile(src, dest)
 	require.NoError(t, err)
@@ -123,11 +123,11 @@ func TestCopyFile_SrcNotExist(t *testing.T) {
 func TestCheckLink_Missing(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	// Create source file
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("set nocompatible"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
 
 	dm := NewDotfilesManager(srcDir, false)
 	status, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: filepath.Join(dir, "nonexistent")})
@@ -138,13 +138,13 @@ func TestCheckLink_Missing(t *testing.T) {
 func TestCheckLink_CorrectSymlink(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("set nocompatible"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
-	os.Symlink(srcFile, destFile)
+	require.NoError(t, os.Symlink(srcFile, destFile))
 
 	dm := NewDotfilesManager(srcDir, false)
 	status, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: destFile})
@@ -155,13 +155,13 @@ func TestCheckLink_CorrectSymlink(t *testing.T) {
 func TestCheckLink_IncorrectSymlink(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("set nocompatible"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
-	os.Symlink("/wrong/target", destFile)
+	require.NoError(t, os.Symlink("/wrong/target", destFile))
 
 	dm := NewDotfilesManager(srcDir, false)
 	status, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: destFile})
@@ -172,13 +172,13 @@ func TestCheckLink_IncorrectSymlink(t *testing.T) {
 func TestCheckLink_RegularFile(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("set nocompatible"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
-	os.WriteFile(destFile, []byte("existing file"), 0o644)
+	require.NoError(t, os.WriteFile(destFile, []byte("existing file"), 0o644))
 
 	dm := NewDotfilesManager(srcDir, false)
 	status, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: destFile})
@@ -189,13 +189,13 @@ func TestCheckLink_RegularFile(t *testing.T) {
 func TestCheckLink_Directory(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("set nocompatible"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
 
 	destDir := filepath.Join(dir, ".vimrc")
-	os.MkdirAll(destDir, 0o755)
+	require.NoError(t, os.MkdirAll(destDir, 0o755))
 
 	dm := NewDotfilesManager(srcDir, false)
 	status, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: destDir})
@@ -206,7 +206,7 @@ func TestCheckLink_Directory(t *testing.T) {
 func TestCheckLink_SourceMissing(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.CheckLink(Dotfile{Src: "nonexistent", Dest: filepath.Join(dir, ".vimrc")})
@@ -217,14 +217,14 @@ func TestCheckLink_SourceMissing(t *testing.T) {
 func TestCheckLink_CopyCorrect(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	content := "same content"
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte(content), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte(content), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
-	os.WriteFile(destFile, []byte(content), 0o644)
+	require.NoError(t, os.WriteFile(destFile, []byte(content), 0o644))
 
 	dm := NewDotfilesManager(srcDir, false)
 	status, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: destFile, Mode: "copy"})
@@ -235,13 +235,13 @@ func TestCheckLink_CopyCorrect(t *testing.T) {
 func TestCheckLink_CopyOutdated(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("new content"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("new content"), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
-	os.WriteFile(destFile, []byte("old content"), 0o644)
+	require.NoError(t, os.WriteFile(destFile, []byte("old content"), 0o644))
 
 	dm := NewDotfilesManager(srcDir, false)
 	status, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: destFile, Mode: "copy"})
@@ -252,13 +252,13 @@ func TestCheckLink_CopyOutdated(t *testing.T) {
 func TestCheckLink_CopyDirAtDest(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("content"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
 
 	destDir := filepath.Join(dir, ".vimrc")
-	os.MkdirAll(destDir, 0o755)
+	require.NoError(t, os.MkdirAll(destDir, 0o755))
 
 	dm := NewDotfilesManager(srcDir, false)
 	status, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: destDir, Mode: "copy"})
@@ -269,14 +269,14 @@ func TestCheckLink_CopyDirAtDest(t *testing.T) {
 func TestCheckLink_CopySymlinkAtDest(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("content"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
 	// Create a symlink at dest in copy mode
-	os.Symlink(srcFile, destFile)
+	require.NoError(t, os.Symlink(srcFile, destFile))
 
 	dm := NewDotfilesManager(srcDir, false)
 	status, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: destFile, Mode: "copy"})
@@ -288,10 +288,10 @@ func TestCheckLink_CopySymlinkAtDest(t *testing.T) {
 func TestApply_LinkMissing(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("set nocompatible"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
 
 	destFile := filepath.Join(dir, "config", ".vimrc")
 
@@ -309,13 +309,13 @@ func TestApply_LinkMissing(t *testing.T) {
 func TestApply_LinkCorrect(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("set nocompatible"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
-	os.Symlink(srcFile, destFile)
+	require.NoError(t, os.Symlink(srcFile, destFile))
 
 	dm := NewDotfilesManager(srcDir, false)
 	created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile}, false)
@@ -326,13 +326,13 @@ func TestApply_LinkCorrect(t *testing.T) {
 func TestApply_LinkIncorrect(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("set nocompatible"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
-	os.Symlink("/wrong/target", destFile)
+	require.NoError(t, os.Symlink("/wrong/target", destFile))
 
 	dm := NewDotfilesManager(srcDir, false)
 	created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile}, false)
@@ -348,13 +348,13 @@ func TestApply_LinkIncorrect(t *testing.T) {
 func TestApply_LinkIsFile(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("set nocompatible"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
-	os.WriteFile(destFile, []byte("old content"), 0o644)
+	require.NoError(t, os.WriteFile(destFile, []byte("old content"), 0o644))
 
 	dm := NewDotfilesManager(srcDir, false)
 	created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile}, false)
@@ -374,13 +374,13 @@ func TestApply_LinkIsFile(t *testing.T) {
 func TestApply_LinkIsFile_Verbose(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("set nocompatible"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
-	os.WriteFile(destFile, []byte("old content"), 0o644)
+	require.NoError(t, os.WriteFile(destFile, []byte("old content"), 0o644))
 
 	dm := NewDotfilesManager(srcDir, true)
 	out := captureOutput(t, func() {
@@ -395,13 +395,13 @@ func TestApply_LinkIsFile_Verbose(t *testing.T) {
 func TestApply_LinkIsDir(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("set nocompatible"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
 
 	destDir := filepath.Join(dir, ".vimrc")
-	os.MkdirAll(destDir, 0o755)
+	require.NoError(t, os.MkdirAll(destDir, 0o755))
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destDir}, false)
@@ -412,10 +412,10 @@ func TestApply_LinkIsDir(t *testing.T) {
 func TestApply_CopyMissing(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("set nocompatible"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
 
 	destFile := filepath.Join(dir, "config", ".vimrc")
 
@@ -434,14 +434,14 @@ func TestApply_CopyMissing(t *testing.T) {
 func TestApply_CopyCorrect(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	content := "same content"
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte(content), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte(content), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
-	os.WriteFile(destFile, []byte(content), 0o644)
+	require.NoError(t, os.WriteFile(destFile, []byte(content), 0o644))
 
 	dm := NewDotfilesManager(srcDir, false)
 	created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile, Mode: "copy"}, false)
@@ -452,13 +452,13 @@ func TestApply_CopyCorrect(t *testing.T) {
 func TestApply_CopyOutdated(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("new content"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("new content"), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
-	os.WriteFile(destFile, []byte("old content"), 0o644)
+	require.NoError(t, os.WriteFile(destFile, []byte("old content"), 0o644))
 
 	dm := NewDotfilesManager(srcDir, false)
 	created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile, Mode: "copy"}, false)
@@ -472,13 +472,13 @@ func TestApply_CopyOutdated(t *testing.T) {
 func TestApply_CopyDirAtDest(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("content"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
 
 	destDir := filepath.Join(dir, ".vimrc")
-	os.MkdirAll(destDir, 0o755)
+	require.NoError(t, os.MkdirAll(destDir, 0o755))
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destDir, Mode: "copy"}, false)
@@ -489,10 +489,10 @@ func TestApply_CopyDirAtDest(t *testing.T) {
 func TestApply_DryRun_Link(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("content"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
 
@@ -509,10 +509,10 @@ func TestApply_DryRun_Link(t *testing.T) {
 func TestApply_DryRun_Copy(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("content"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
 
@@ -529,13 +529,13 @@ func TestApply_DryRun_Copy(t *testing.T) {
 func TestApply_DryRun_LinkIncorrect(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("content"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
-	os.Symlink("/wrong/target", destFile)
+	require.NoError(t, os.Symlink("/wrong/target", destFile))
 
 	dm := NewDotfilesManager(srcDir, false)
 	created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile}, true)
@@ -550,13 +550,13 @@ func TestApply_DryRun_LinkIncorrect(t *testing.T) {
 func TestApply_DryRun_LinkIsFile(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("content"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
-	os.WriteFile(destFile, []byte("existing"), 0o644)
+	require.NoError(t, os.WriteFile(destFile, []byte("existing"), 0o644))
 
 	dm := NewDotfilesManager(srcDir, false)
 	created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile}, true)
@@ -571,13 +571,13 @@ func TestApply_DryRun_LinkIsFile(t *testing.T) {
 func TestApply_DryRun_CopyOutdated(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("new"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("new"), 0o644))
 
 	destFile := filepath.Join(dir, ".vimrc")
-	os.WriteFile(destFile, []byte("old"), 0o644)
+	require.NoError(t, os.WriteFile(destFile, []byte("old"), 0o644))
 
 	dm := NewDotfilesManager(srcDir, false)
 	created, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile, Mode: "copy"}, true)
@@ -594,19 +594,19 @@ func TestApply_DryRun_CopyOutdated(t *testing.T) {
 func TestCheckLink_LstatError(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("content"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
 
 	// Create a parent dir that we'll make unreadable
 	parentDir := filepath.Join(dir, "noperm")
-	os.MkdirAll(parentDir, 0o755)
+	require.NoError(t, os.MkdirAll(parentDir, 0o755))
 	destFile := filepath.Join(parentDir, ".vimrc")
-	os.WriteFile(destFile, []byte("x"), 0o644)
+	require.NoError(t, os.WriteFile(destFile, []byte("x"), 0o644))
 	// Remove execute permission from parent so Lstat fails
-	os.Chmod(parentDir, 0o000)
-	t.Cleanup(func() { os.Chmod(parentDir, 0o755) })
+	require.NoError(t, os.Chmod(parentDir, 0o000))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(parentDir, 0o755)) })
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: destFile})
@@ -616,15 +616,15 @@ func TestCheckLink_LstatError(t *testing.T) {
 func TestCheckLink_FilesEqualError(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("content"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
 
 	// Create dest file that is unreadable
 	destFile := filepath.Join(dir, ".vimrc")
-	os.WriteFile(destFile, []byte("other"), 0o000)
-	t.Cleanup(func() { os.Chmod(destFile, 0o644) })
+	require.NoError(t, os.WriteFile(destFile, []byte("other"), 0o000))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(destFile, 0o644)) })
 
 	dm := NewDotfilesManager(srcDir, false)
 	status, err := dm.CheckLink(Dotfile{Src: "vimrc", Dest: destFile, Mode: "copy"})
@@ -636,16 +636,16 @@ func TestCheckLink_FilesEqualError(t *testing.T) {
 func TestApply_LinkMissing_MkdirAllError(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("content"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
 
 	// Dest in an unwritable directory
 	parentDir := filepath.Join(dir, "noperm")
-	os.MkdirAll(parentDir, 0o755)
-	os.Chmod(parentDir, 0o555)
-	t.Cleanup(func() { os.Chmod(parentDir, 0o755) })
+	require.NoError(t, os.MkdirAll(parentDir, 0o755))
+	require.NoError(t, os.Chmod(parentDir, 0o555))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(parentDir, 0o755)) })
 
 	destFile := filepath.Join(parentDir, "subdir", ".vimrc")
 
@@ -658,20 +658,20 @@ func TestApply_LinkMissing_MkdirAllError(t *testing.T) {
 func TestApply_LinkMissing_SymlinkError(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("content"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
 
 	// Dest dir exists but is read-only
 	parentDir := filepath.Join(dir, "readonly")
-	os.MkdirAll(parentDir, 0o755)
+	require.NoError(t, os.MkdirAll(parentDir, 0o755))
 
 	destFile := filepath.Join(parentDir, ".vimrc")
 
 	// Make parent read-only after creating it
-	os.Chmod(parentDir, 0o555)
-	t.Cleanup(func() { os.Chmod(parentDir, 0o755) })
+	require.NoError(t, os.Chmod(parentDir, 0o555))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(parentDir, 0o755)) })
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile}, false)
@@ -682,20 +682,20 @@ func TestApply_LinkMissing_SymlinkError(t *testing.T) {
 func TestApply_LinkIncorrect_RemoveError(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("content"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
 
 	// Create incorrect symlink in a dir that we'll make read-only
 	parentDir := filepath.Join(dir, "readonly")
-	os.MkdirAll(parentDir, 0o755)
+	require.NoError(t, os.MkdirAll(parentDir, 0o755))
 	destFile := filepath.Join(parentDir, ".vimrc")
-	os.Symlink("/wrong/target", destFile)
+	require.NoError(t, os.Symlink("/wrong/target", destFile))
 
 	// Make parent dir read-only so Remove fails
-	os.Chmod(parentDir, 0o555)
-	t.Cleanup(func() { os.Chmod(parentDir, 0o755) })
+	require.NoError(t, os.Chmod(parentDir, 0o555))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(parentDir, 0o755)) })
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile}, false)
@@ -706,20 +706,20 @@ func TestApply_LinkIncorrect_RemoveError(t *testing.T) {
 func TestApply_LinkIsFile_RenameError(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("content"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
 
 	// File at dest in a dir we'll make read-only
 	parentDir := filepath.Join(dir, "readonly")
-	os.MkdirAll(parentDir, 0o755)
+	require.NoError(t, os.MkdirAll(parentDir, 0o755))
 	destFile := filepath.Join(parentDir, ".vimrc")
-	os.WriteFile(destFile, []byte("existing"), 0o644)
+	require.NoError(t, os.WriteFile(destFile, []byte("existing"), 0o644))
 
 	// Make parent read-only so Rename fails
-	os.Chmod(parentDir, 0o555)
-	t.Cleanup(func() { os.Chmod(parentDir, 0o755) })
+	require.NoError(t, os.Chmod(parentDir, 0o555))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(parentDir, 0o755)) })
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile}, false)
@@ -730,15 +730,15 @@ func TestApply_LinkIsFile_RenameError(t *testing.T) {
 func TestApply_CopyMissing_MkdirAllError(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("content"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
 
 	// Read-only parent
 	parentDir := filepath.Join(dir, "noperm")
-	os.MkdirAll(parentDir, 0o555)
-	t.Cleanup(func() { os.Chmod(parentDir, 0o755) })
+	require.NoError(t, os.MkdirAll(parentDir, 0o555))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(parentDir, 0o755)) })
 
 	destFile := filepath.Join(parentDir, "subdir", ".vimrc")
 
@@ -751,15 +751,15 @@ func TestApply_CopyMissing_MkdirAllError(t *testing.T) {
 func TestApply_CopyMissing_CopyFileError(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("content"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
 
 	// Read-only dest dir (dir exists so MkdirAll succeeds, but can't write)
 	parentDir := filepath.Join(dir, "readonly")
-	os.MkdirAll(parentDir, 0o555)
-	t.Cleanup(func() { os.Chmod(parentDir, 0o755) })
+	require.NoError(t, os.MkdirAll(parentDir, 0o555))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(parentDir, 0o755)) })
 
 	destFile := filepath.Join(parentDir, ".vimrc")
 
@@ -772,15 +772,15 @@ func TestApply_CopyMissing_CopyFileError(t *testing.T) {
 func TestApply_CopyOutdated_CopyFileError(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	srcFile := filepath.Join(srcDir, "vimrc")
-	os.WriteFile(srcFile, []byte("new content"), 0o644)
+	require.NoError(t, os.WriteFile(srcFile, []byte("new content"), 0o644))
 
 	// Existing file that we make unwritable
 	destFile := filepath.Join(dir, ".vimrc")
-	os.WriteFile(destFile, []byte("old content"), 0o444)
-	t.Cleanup(func() { os.Chmod(destFile, 0o644) })
+	require.NoError(t, os.WriteFile(destFile, []byte("old content"), 0o444))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(destFile, 0o644)) })
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.Apply(Dotfile{Src: "vimrc", Dest: destFile, Mode: "copy"}, false)
@@ -791,12 +791,12 @@ func TestApply_CopyOutdated_CopyFileError(t *testing.T) {
 func TestCopyFile_DestOpenError(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "src.txt")
-	os.WriteFile(src, []byte("content"), 0o644)
+	require.NoError(t, os.WriteFile(src, []byte("content"), 0o644))
 
 	// Dest in unwritable dir
 	parentDir := filepath.Join(dir, "readonly")
-	os.MkdirAll(parentDir, 0o555)
-	t.Cleanup(func() { os.Chmod(parentDir, 0o755) })
+	require.NoError(t, os.MkdirAll(parentDir, 0o555))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(parentDir, 0o755)) })
 
 	dest := filepath.Join(parentDir, "dest.txt")
 	err := copyFile(src, dest)
@@ -806,7 +806,7 @@ func TestCopyFile_DestOpenError(t *testing.T) {
 func TestApply_SourceMissing(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
-	os.MkdirAll(srcDir, 0o755)
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
 	dm := NewDotfilesManager(srcDir, false)
 	_, err := dm.Apply(Dotfile{Src: "nonexistent", Dest: filepath.Join(dir, ".vimrc")}, false)

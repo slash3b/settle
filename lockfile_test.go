@@ -39,11 +39,12 @@ func TestStateManager_LoadExisting(t *testing.T) {
 			"git": {Version: "2.40.0"},
 		},
 	}
-	data, _ := json.MarshalIndent(state, "", "  ")
-	os.WriteFile(filepath.Join(dir, "lockfile.json"), data, 0o644)
+	data, err := json.MarshalIndent(state, "", "  ")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "lockfile.json"), data, 0o644))
 
 	sm := NewStateManager(configPath)
-	err := sm.Load()
+	err = sm.Load()
 	require.NoError(t, err)
 
 	v, ok := sm.GetPackageVersion("vim")
@@ -58,7 +59,7 @@ func TestStateManager_LoadExisting(t *testing.T) {
 func TestStateManager_LoadCorrupt(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
-	os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte("not json{{{"), 0o644)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte("not json{{{"), 0o644))
 
 	sm := NewStateManager(configPath)
 	err := sm.Load()
@@ -70,9 +71,9 @@ func TestStateManager_LoadReadError(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
 	lockPath := filepath.Join(dir, "lockfile.json")
-	os.WriteFile(lockPath, []byte("{}"), 0o644)
-	os.Chmod(lockPath, 0o000)
-	t.Cleanup(func() { os.Chmod(lockPath, 0o644) })
+	require.NoError(t, os.WriteFile(lockPath, []byte("{}"), 0o644))
+	require.NoError(t, os.Chmod(lockPath, 0o000))
+	t.Cleanup(func() { require.NoError(t, os.Chmod(lockPath, 0o644)) })
 
 	sm := NewStateManager(configPath)
 	err := sm.Load()
@@ -80,27 +81,13 @@ func TestStateManager_LoadReadError(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to read state file")
 }
 
-func TestStateManager_SaveNotDirty(t *testing.T) {
-	dir := t.TempDir()
-	sm := NewStateManager(filepath.Join(dir, "config.toml"))
-	sm.Load()
-
-	// Save without any changes — should be a no-op
-	err := sm.Save()
-	require.NoError(t, err)
-
-	// Lockfile should NOT exist since nothing was dirty
-	_, err = os.Stat(filepath.Join(dir, "lockfile.json"))
-	assert.True(t, os.IsNotExist(err))
-}
-
-func TestStateManager_SaveDirty(t *testing.T) {
+func TestStateManager_Save(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.toml")
 	sm := NewStateManager(configPath)
-	sm.Load()
+	require.NoError(t, sm.Load())
 
-	sm.SetPackageVersion("vim", "9.0.1")
+	sm.SetPackageVersion("vim", "9.0.1", "apt")
 
 	err := sm.Save()
 	require.NoError(t, err)
@@ -110,14 +97,14 @@ func TestStateManager_SaveDirty(t *testing.T) {
 	require.NoError(t, err)
 
 	var state State
-	json.Unmarshal(data, &state)
+	require.NoError(t, json.Unmarshal(data, &state))
 	assert.Equal(t, "9.0.1", state.Packages["vim"].Version)
 }
 
 func TestStateManager_SaveWriteError(t *testing.T) {
 	// Use a directory that doesn't exist
 	sm := NewStateManager("/nonexistent/dir/config.toml")
-	sm.SetPackageVersion("vim", "1.0")
+	sm.SetPackageVersion("vim", "1.0", "apt")
 
 	err := sm.Save()
 	require.Error(t, err)
@@ -132,7 +119,7 @@ func TestStateManager_GetSetVersion(t *testing.T) {
 	assert.False(t, ok)
 
 	// Set and get
-	sm.SetPackageVersion("vim", "9.0.1")
+	sm.SetPackageVersion("vim", "9.0.1", "apt")
 	v, ok := sm.GetPackageVersion("vim")
 	assert.True(t, ok)
 	assert.Equal(t, "9.0.1", v)
@@ -143,34 +130,20 @@ func TestStateManager_SetVersionPreservesInstalledAt(t *testing.T) {
 	configPath := filepath.Join(dir, "config.toml")
 	sm := NewStateManager(configPath)
 
-	sm.SetPackageVersion("vim", "9.0.0")
+	sm.SetPackageVersion("vim", "9.0.0", "apt")
 	installedAt := sm.state.Packages["vim"].InstalledAt
 
 	// Update version — InstalledAt should be preserved
-	sm.SetPackageVersion("vim", "9.0.1")
+	sm.SetPackageVersion("vim", "9.0.1", "apt")
 	assert.Equal(t, installedAt, sm.state.Packages["vim"].InstalledAt)
 	assert.Equal(t, "9.0.1", sm.state.Packages["vim"].Version)
 }
 
-func TestStateManager_SetVersionSameNoDirty(t *testing.T) {
-	sm := NewStateManager("/tmp/config.toml")
-
-	sm.SetPackageVersion("vim", "9.0.1")
-	// Save to clear dirty flag
-	sm.dirty = false
-
-	// Set same version — should not mark dirty
-	sm.SetPackageVersion("vim", "9.0.1")
-	assert.False(t, sm.dirty)
-}
-
 func TestStateManager_RemovePackage(t *testing.T) {
 	sm := NewStateManager("/tmp/config.toml")
-	sm.SetPackageVersion("vim", "9.0.1")
-	sm.dirty = false
+	sm.SetPackageVersion("vim", "9.0.1", "apt")
 
 	sm.RemovePackage("vim")
-	assert.True(t, sm.dirty)
 
 	_, ok := sm.GetPackageVersion("vim")
 	assert.False(t, ok)
@@ -178,19 +151,57 @@ func TestStateManager_RemovePackage(t *testing.T) {
 
 func TestStateManager_RemoveNonexistent(t *testing.T) {
 	sm := NewStateManager("/tmp/config.toml")
-
+	// Should not panic
 	sm.RemovePackage("nonexistent")
-	assert.False(t, sm.dirty)
 }
 
 func TestStateManager_GetAllPackages(t *testing.T) {
 	sm := NewStateManager("/tmp/config.toml")
-	sm.SetPackageVersion("vim", "9.0.1")
-	sm.SetPackageVersion("git", "2.40.0")
+	sm.SetPackageVersion("vim", "9.0.1", "apt")
+	sm.SetPackageVersion("git", "2.40.0", "apt")
 
 	pkgs := sm.GetAllPackages()
 	assert.Equal(t, 2, len(pkgs))
 	assert.ElementsMatch(t, []string{"vim", "git"}, pkgs)
+}
+
+func TestStateManager_GetPackagesByManager(t *testing.T) {
+	sm := NewStateManager("/tmp/config.toml")
+	sm.SetPackageVersion("vim", "9.0.1", "apt")
+	sm.SetPackageVersion("git", "2.40.0", "apt")
+	sm.SetPackageVersion("golangci-lint", "v2.9.0", "go")
+
+	aptPkgs := sm.GetPackagesByManager("apt")
+	assert.Equal(t, 2, len(aptPkgs))
+	assert.ElementsMatch(t, []string{"vim", "git"}, aptPkgs)
+
+	goPkgs := sm.GetPackagesByManager("go")
+	assert.Equal(t, 1, len(goPkgs))
+	assert.Equal(t, "golangci-lint", goPkgs[0])
+
+	cargoPkgs := sm.GetPackagesByManager("cargo")
+	assert.Equal(t, 0, len(cargoPkgs))
+}
+
+func TestStateManager_BackfillsEmptyManager(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+
+	// Write a lockfile without manager field (old format)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte(`{
+		"packages": {
+			"vim": {"version": "9.0.1", "installed_at": "2026-01-01T00:00:00Z"},
+			"git": {"version": "2.40.0", "installed_at": "2026-01-01T00:00:00Z"}
+		}
+	}`), 0o644))
+
+	sm := NewStateManager(configPath)
+	require.NoError(t, sm.Load())
+
+	// Should be backfilled to "apt"
+	aptPkgs := sm.GetPackagesByManager("apt")
+	assert.Equal(t, 2, len(aptPkgs))
+	assert.ElementsMatch(t, []string{"vim", "git"}, aptPkgs)
 }
 
 func TestStateManager_Path(t *testing.T) {
@@ -377,9 +388,8 @@ func TestSyncPackageVersions_NoDowngrade(t *testing.T) {
 
 	sm := NewStateManager("/tmp/config.toml")
 	// Pre-populate with higher versions (as if pulled from another machine)
-	sm.SetPackageVersion("btop", "1.4.6-01")
-	sm.SetPackageVersion("duf", "0.9.1")
-	sm.dirty = false
+	sm.SetPackageVersion("btop", "1.4.6-01", "apt")
+	sm.SetPackageVersion("duf", "0.9.1", "apt")
 
 	err := sm.SyncPackageVersions([]string{"btop", "duf"})
 	require.NoError(t, err)
@@ -390,9 +400,6 @@ func TestSyncPackageVersions_NoDowngrade(t *testing.T) {
 
 	v, _ = sm.GetPackageVersion("duf")
 	assert.Equal(t, "0.9.1", v)
-
-	// Should not be marked dirty since nothing changed
-	assert.False(t, sm.dirty)
 }
 
 func TestSyncPackageVersions_UpgradesHigher(t *testing.T) {
@@ -404,8 +411,7 @@ func TestSyncPackageVersions_UpgradesHigher(t *testing.T) {
 	})
 
 	sm := NewStateManager("/tmp/config.toml")
-	sm.SetPackageVersion("vim", "9.0.1")
-	sm.dirty = false
+	sm.SetPackageVersion("vim", "9.0.1", "apt")
 
 	err := sm.SyncPackageVersions([]string{"vim"})
 	require.NoError(t, err)
@@ -413,7 +419,6 @@ func TestSyncPackageVersions_UpgradesHigher(t *testing.T) {
 	// Should be updated to higher version
 	v, _ := sm.GetPackageVersion("vim")
 	assert.Equal(t, "9.0.2", v)
-	assert.True(t, sm.dirty)
 }
 
 func TestSyncPackageVersions_NewPackage(t *testing.T) {

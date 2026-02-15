@@ -5,62 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 )
-
-// mockExecCommand returns an execCommand replacement that records calls and
-// returns preconfigured output.  The returned recorder accumulates every
-// (name, args...) invocation so tests can assert on it.
-type cmdCall struct {
-	Name string
-	Args []string
-}
-
-type cmdRecorder struct {
-	Calls    []cmdCall
-	output   []byte // stdout data to return
-	err      error  // error to return from cmd.Run/Output
-	exitCode int    // for CombinedOutput / Run
-}
-
-// mockExecSuccess returns a function that replaces execCommand.
-// Every call records the invocation and produces a *exec.Cmd that will
-// succeed with the given stdout output.
-func mockExecSuccess(output string) (func(name string, arg ...string) *exec.Cmd, *cmdRecorder) {
-	rec := &cmdRecorder{output: []byte(output)}
-
-	fn := func(name string, arg ...string) *exec.Cmd {
-		rec.Calls = append(rec.Calls, cmdCall{Name: name, Args: arg})
-		// Use "echo" to produce the output
-		cmd := exec.Command("echo", "-n", output)
-		return cmd
-	}
-
-	return fn, rec
-}
-
-// mockExecFailure returns a function that replaces execCommand.
-// Every call records the invocation and produces a *exec.Cmd that will
-// fail with exit code 1.
-func mockExecFailure() (func(name string, arg ...string) *exec.Cmd, *cmdRecorder) {
-	rec := &cmdRecorder{}
-
-	fn := func(name string, arg ...string) *exec.Cmd {
-		rec.Calls = append(rec.Calls, cmdCall{Name: name, Args: arg})
-		cmd := exec.Command("false")
-		return cmd
-	}
-
-	return fn, rec
-}
-
-// mockExecFunc returns a function that replaces execCommand, invoking
-// a callback to decide what command to produce per call.
-func mockExecFunc(cb func(name string, arg ...string) *exec.Cmd) func(name string, arg ...string) *exec.Cmd {
-	return cb
-}
 
 // withTempConfig writes TOML content to a temporary file and returns its path.
 func withTempConfig(t *testing.T, content string) string {
@@ -90,11 +37,11 @@ func captureOutput(t *testing.T, fn func()) string {
 
 	fn()
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = old
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 	return buf.String()
 }
 
@@ -110,12 +57,18 @@ func captureStderr(t *testing.T, fn func()) string {
 
 	fn()
 
-	w.Close()
+	_ = w.Close()
 	os.Stderr = old
 
 	var buf bytes.Buffer
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 	return buf.String()
+}
+
+// cmdCall records a command invocation for test assertions.
+type cmdCall struct {
+	Name string
+	Args []string
 }
 
 // saveMocks saves the current values of all swappable function variables
@@ -126,12 +79,16 @@ func saveMocks(t *testing.T) {
 	origGetInstalledVersion := GetInstalledVersion
 	origGetAvailableVersion := GetAvailableVersion
 	origOsReleasePath := osReleasePath
+	origGoInstall := GoInstall
+	origGoBinPath := GoBinPath
 
 	t.Cleanup(func() {
 		execCommand = origExecCommand
 		GetInstalledVersion = origGetInstalledVersion
 		GetAvailableVersion = origGetAvailableVersion
 		osReleasePath = origOsReleasePath
+		GoInstall = origGoInstall
+		GoBinPath = origGoBinPath
 	})
 }
 

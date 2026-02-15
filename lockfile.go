@@ -14,6 +14,7 @@ const stateFileName = "lockfile.json"
 // PackageState tracks the installed version of a package
 type PackageState struct {
 	Version     string    `json:"version"`
+	Manager     string    `json:"manager"`
 	InstalledAt time.Time `json:"installed_at"`
 }
 
@@ -62,7 +63,7 @@ func (s *StateManager) Load() error {
 	return nil
 }
 
-// Save writes the state file (only if changes were made)
+// Save writes the state file only if data has changed
 func (s *StateManager) Save() error {
 	if !s.dirty {
 		return nil
@@ -92,25 +93,24 @@ func (s *StateManager) GetPackageVersion(name string) (string, bool) {
 	return pkg.Version, true
 }
 
-// SetPackageVersion updates the version for a package
-// Preserves existing InstalledAt if package already exists
-// Only marks state as dirty if there's an actual change
-func (s *StateManager) SetPackageVersion(name, version string) {
+// SetPackageVersion updates the version for a package.
+// Preserves existing InstalledAt if package already exists.
+func (s *StateManager) SetPackageVersion(name, version, manager string) {
 	if existing, ok := s.state.Packages[name]; ok {
-		// Package exists - only update if version changed
-		if existing.Version != version {
-			existing.Version = version
-			s.state.Packages[name] = existing
-			s.dirty = true
+		if existing.Version == version && existing.Manager == manager {
+			return
 		}
+		existing.Version = version
+		existing.Manager = manager
+		s.state.Packages[name] = existing
 	} else {
-		// New package - set install time
 		s.state.Packages[name] = PackageState{
 			Version:     version,
+			Manager:     manager,
 			InstalledAt: time.Now().Truncate(time.Second),
 		}
-		s.dirty = true
 	}
+	s.dirty = true
 }
 
 // GetInstalledVersion queries dpkg for the installed version of a package.
@@ -179,7 +179,7 @@ func (s *StateManager) SyncPackageVersions(packages []string) error {
 	results := make(chan versionResult, len(packages))
 
 	// Start workers
-	for i := 0; i < workers; i++ {
+	for range workers {
 		go func() {
 			for pkg := range jobs {
 				version, err := GetInstalledVersion(pkg)
@@ -206,7 +206,7 @@ func (s *StateManager) SyncPackageVersions(packages []string) error {
 		}
 		existing, ok := s.GetPackageVersion(result.name)
 		if !ok || CompareVersions(result.version, existing) > 0 {
-			s.SetPackageVersion(result.name, result.version)
+			s.SetPackageVersion(result.name, result.version, "apt")
 		}
 	}
 
@@ -223,6 +223,22 @@ func (s *StateManager) GetAllPackages() []string {
 	packages := make([]string, 0, len(s.state.Packages))
 	for name := range s.state.Packages {
 		packages = append(packages, name)
+	}
+	return packages
+}
+
+// GetPackagesByManager returns all package names for a specific manager.
+// Entries with no manager are treated as "apt" for backwards compatibility.
+func (s *StateManager) GetPackagesByManager(manager string) []string {
+	var packages []string
+	for name, pkg := range s.state.Packages {
+		m := pkg.Manager
+		if m == "" {
+			m = "apt"
+		}
+		if m == manager {
+			packages = append(packages, name)
+		}
 	}
 	return packages
 }

@@ -246,7 +246,7 @@ func copyFile(src, dest string) error {
 		return err
 	}
 
-	defer srcFile.Close()
+	defer srcFile.Close() //nolint:errcheck
 
 	srcInfo, err := srcFile.Stat()
 	if err != nil {
@@ -258,7 +258,7 @@ func copyFile(src, dest string) error {
 		return err
 	}
 
-	defer destFile.Close()
+	defer destFile.Close() //nolint:errcheck
 
 	_, err = io.Copy(destFile, srcFile)
 

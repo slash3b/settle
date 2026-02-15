@@ -67,16 +67,16 @@ func (s *Settle) Apply() error {
 		}
 	}
 
-	// Future managers would be handled here:
-	// if s.config.Cargo != nil {
-	//     managersFound++
-	//     if err := s.applyCargo(); err != nil {
-	//         return err
-	//     }
-	// }
+	// Handle Go packages
+	if len(s.config.Go) > 0 {
+		managersFound++
+		if err := s.applyGo(); err != nil {
+			return fmt.Errorf("error handling go packages: %w", err)
+		}
+	}
 
 	if managersFound == 0 {
-		return fmt.Errorf("no packages, dotfiles, or git repos configured in config.toml")
+		return fmt.Errorf("no packages, dotfiles, git repos, or go packages configured in config.toml")
 	}
 
 	// Sync state file (skip in dry-run mode)
@@ -182,7 +182,7 @@ func (s *Settle) Install(packages []string) error {
 			for _, pkg := range toInstall {
 				version, err := GetInstalledVersion(pkg)
 				if err == nil {
-					lockfile.SetPackageVersion(pkg, version)
+					lockfile.SetPackageVersion(pkg, version, "apt")
 				}
 			}
 			if err := lockfile.Save(); err != nil {
@@ -359,7 +359,7 @@ func (s *Settle) Update() error {
 				for _, pkg := range allPackages {
 					version, err := GetInstalledVersion(pkg)
 					if err == nil {
-						lockfile.SetPackageVersion(pkg, version)
+						lockfile.SetPackageVersion(pkg, version, "apt")
 					}
 				}
 
@@ -376,7 +376,14 @@ func (s *Settle) Update() error {
 		}
 	}
 
-	if !hasApt && !hasGit {
+	hasGo := len(s.config.Go) > 0
+	if hasGo {
+		if err := s.updateGo(); err != nil {
+			return fmt.Errorf("error updating go packages: %w", err)
+		}
+	}
+
+	if !hasApt && !hasGit && !hasGo {
 		fmt.Println("No packages or git repos configured")
 		return nil
 	}
@@ -591,7 +598,7 @@ func (s *Settle) applyApt() error {
 			for _, pkg := range installable {
 				version, err := GetInstalledVersion(pkg)
 				if err == nil {
-					lockfile.SetPackageVersion(pkg, version)
+					lockfile.SetPackageVersion(pkg, version, "apt")
 				}
 			}
 			if err := lockfile.Save(); err != nil {
@@ -625,14 +632,14 @@ func (s *Settle) applyApt() error {
 	}
 	PrintPackageTable(statuses)
 
-	// Check for packages to remove (in lockfile but not in config)
+	// Check for apt packages to remove (in lockfile but not in config)
 	configSet := make(map[string]bool)
 	for _, pkg := range allPackages {
 		configSet[pkg] = true
 	}
 
 	var toRemove []string
-	for _, pkg := range lockfile.GetAllPackages() {
+	for _, pkg := range lockfile.GetPackagesByManager("apt") {
 		if !configSet[pkg] {
 			toRemove = append(toRemove, pkg)
 		}
@@ -681,6 +688,11 @@ func (s *Settle) List() error {
 	// List Git repos
 	if len(s.config.Git) > 0 {
 		s.listGit()
+	}
+
+	// List Go packages
+	if len(s.config.Go) > 0 {
+		s.listGo()
 	}
 
 	return nil
@@ -738,7 +750,7 @@ func (s *Settle) listApt() error {
 	results := make(chan packageInfo, len(allPackages))
 
 	// Start workers
-	for i := 0; i < workers; i++ {
+	for range workers {
 		go func() {
 			for pkg := range jobs {
 				info := packageInfo{name: pkg, isMissing: missingSet[pkg]}
@@ -1028,4 +1040,155 @@ func (s *Settle) listGit() {
 	}
 
 	PrintListTable("Git Repos", items)
+}
+
+// applyGo installs missing or outdated Go packages via `go install`
+func (s *Settle) applyGo() error {
+	binDir, err := GoBinPath()
+	if err != nil {
+		return fmt.Errorf("cannot determine Go bin path: %w", err)
+	}
+
+	lockfile := NewStateManager(s.configPath)
+	if err := lockfile.Load(); err != nil && s.verbose {
+		fmt.Printf("Note: could not load lockfile: %v\n", err)
+	}
+
+	fmt.Printf("\nChecking %d go packages...\n", len(s.config.Go))
+
+	var statuses []PackageStatus
+	for _, pkg := range s.config.Go {
+		binName := GoPackageBinaryName(pkg.Path)
+
+		if IsGoPackageInstalled(binDir, binName) {
+			// Binary exists — check if lockfile version matches config version
+			lockVersion, hasLock := lockfile.GetPackageVersion(binName)
+			if hasLock && lockVersion == pkg.Version {
+				statuses = append(statuses, PackageStatus{Name: binName, Status: StatusSkipped})
+				continue
+			}
+
+			// Version mismatch or not in lockfile — upgrade
+			if s.dryRun {
+				if hasLock {
+					fmt.Printf("[dry-run] Would upgrade: %s %s -> %s\n", binName, lockVersion, pkg.Version)
+				} else {
+					fmt.Printf("[dry-run] Would install: go install %s@%s (adopting existing binary)\n", pkg.Path, pkg.Version)
+				}
+				statuses = append(statuses, PackageStatus{Name: binName, Status: StatusUpgraded})
+				continue
+			}
+
+			if err := GoInstall(pkg.Path, pkg.Version, s.verbose); err != nil {
+				return fmt.Errorf("failed to upgrade %s: %w", pkg.Path, err)
+			}
+
+			lockfile.SetPackageVersion(binName, pkg.Version, "go")
+			statuses = append(statuses, PackageStatus{Name: binName, Status: StatusUpgraded})
+			continue
+		}
+
+		// Binary missing — install
+		if s.dryRun {
+			fmt.Printf("[dry-run] Would install: go install %s@%s\n", pkg.Path, pkg.Version)
+			statuses = append(statuses, PackageStatus{Name: binName, Status: StatusInstalled})
+			continue
+		}
+
+		if err := GoInstall(pkg.Path, pkg.Version, s.verbose); err != nil {
+			return fmt.Errorf("failed to install %s: %w", pkg.Path, err)
+		}
+
+		lockfile.SetPackageVersion(binName, pkg.Version, "go")
+		statuses = append(statuses, PackageStatus{Name: binName, Status: StatusInstalled})
+	}
+
+	PrintPackageTable(statuses)
+
+	if !s.dryRun {
+		if err := lockfile.Save(); err != nil {
+			fmt.Printf("Warning: failed to update lockfile: %v\n", err)
+		}
+	}
+
+	return nil
+}
+
+// updateGo reinstalls all Go packages at their configured versions
+func (s *Settle) updateGo() error {
+	fmt.Printf("\nUpdating %d go packages...\n", len(s.config.Go))
+
+	lockfile := NewStateManager(s.configPath)
+	if err := lockfile.Load(); err != nil && s.verbose {
+		fmt.Printf("Note: could not load lockfile: %v\n", err)
+	}
+
+	for _, pkg := range s.config.Go {
+		binName := GoPackageBinaryName(pkg.Path)
+
+		if s.dryRun {
+			fmt.Printf("[dry-run] Would install: go install %s@%s\n", pkg.Path, pkg.Version)
+			continue
+		}
+
+		if err := GoInstall(pkg.Path, pkg.Version, s.verbose); err != nil {
+			return fmt.Errorf("failed to update %s: %w", pkg.Path, err)
+		}
+
+		lockfile.SetPackageVersion(binName, pkg.Version, "go")
+	}
+
+	if !s.dryRun {
+		if err := lockfile.Save(); err != nil {
+			fmt.Printf("Warning: failed to update lockfile: %v\n", err)
+		}
+	}
+
+	return nil
+}
+
+// listGo lists all Go packages and their installed status
+func (s *Settle) listGo() {
+	binDir, err := GoBinPath()
+	if err != nil {
+		fmt.Printf("Warning: cannot determine Go bin path: %v\n", err)
+		return
+	}
+
+	lockfile := NewStateManager(s.configPath)
+	if err := lockfile.Load(); err != nil && s.verbose {
+		fmt.Printf("Warning: could not load lockfile: %v\n", err)
+	}
+
+	red := color.New(color.FgRed)
+	green := color.New(color.FgGreen)
+	yellow := color.New(color.FgYellow)
+
+	var items []ListItem
+	for _, pkg := range s.config.Go {
+		binName := GoPackageBinaryName(pkg.Path)
+		var item ListItem
+		item.Name = binName
+
+		if IsGoPackageInstalled(binDir, binName) {
+			lockVersion, hasLock := lockfile.GetPackageVersion(binName)
+			if hasLock && lockVersion != pkg.Version {
+				item.Status = fmt.Sprintf("%s (config: %s)", lockVersion, pkg.Version)
+				item.Color = yellow
+			} else if hasLock {
+				item.Status = lockVersion
+				item.Color = green
+			} else {
+				item.Status = "installed (not in lockfile)"
+				item.Color = yellow
+			}
+		} else {
+			item.Status = "missing"
+			item.Color = red
+		}
+
+		items = append(items, item)
+	}
+
+	PrintListTable("Go Packages", items)
 }

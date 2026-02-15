@@ -31,9 +31,10 @@ func PrintPackageTable(packages []PackageStatus) {
 	skippedCount := 0
 
 	for _, pkg := range packages {
-		if pkg.Status == StatusInstalled || pkg.Status == StatusPinned || pkg.Status == StatusUpgraded {
+		switch pkg.Status {
+		case StatusInstalled, StatusPinned, StatusUpgraded:
 			installed = append(installed, pkg)
-		} else if pkg.Status == StatusSkipped {
+		case StatusSkipped:
 			skippedCount++
 		}
 	}

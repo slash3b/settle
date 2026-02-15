@@ -58,7 +58,7 @@ func (d *DebianManager) CheckInstalled(packages []string) ([]string, error) {
 	results := make(chan packageCheckResult, len(packages))
 
 	// Start workers
-	for i := 0; i < workers; i++ {
+	for range workers {
 		go func() {
 			for pkg := range jobs {
 				installed, _ := d.IsInstalled(pkg)

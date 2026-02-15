@@ -36,14 +36,17 @@ type GitRepo struct {
 	Dest string `toml:"dest"`
 }
 
+type GoPackage struct {
+	Path    string `toml:"path"`
+	Version string `toml:"version"`
+}
+
 // Config represents an entire user's config document.
 type Config struct {
 	Apt      *AptConfig      `toml:"apt"`
 	Dotfiles *DotfilesConfig `toml:"dotfiles"`
 	Git      []GitRepo       `toml:"git"`
-	// Future managers:
-	// Cargo  *CargoConfig  `toml:"cargo"`
-	// Go     *GoConfig     `toml:"go"`
+	Go       []GoPackage     `toml:"go"`
 }
 
 func loadConfig(path string) (*Config, error) {
