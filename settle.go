@@ -509,8 +509,14 @@ func (s *Settle) applyApt() error {
 		}
 	}
 
-	// Install missing packages
+	// Install missing packages (refresh package lists first)
 	if len(installable) > 0 {
+		if !s.dryRun {
+			if err := manager.RefreshPackageLists(); err != nil {
+				return fmt.Errorf("failed to update package lists: %w", err)
+			}
+		}
+
 		if s.dryRun {
 			fmt.Println("\n[dry-run] Would install:")
 			for _, pkg := range installable {

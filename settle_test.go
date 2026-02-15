@@ -1817,7 +1817,10 @@ func TestApply_CheckInstalledError(t *testing.T) {
 		if name == "dpkg-query" {
 			return exec.Command("false")
 		}
-		// apt-get install fails
+		// apt-get update succeeds, apt-get install fails
+		if name == "sudo" && len(arg) >= 2 && arg[1] == "update" {
+			return exec.Command("true")
+		}
 		return exec.Command("bash", "-c", "exit 1")
 	}
 	mockInstalledVersion(map[string]string{})
