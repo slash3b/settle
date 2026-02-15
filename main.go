@@ -10,8 +10,9 @@ import (
 	"syscall"
 )
 
-// Version is set via ldflags at build time
+// Version and BuildTime are set via ldflags at build time
 var Version = "development"
+var BuildTime = ""
 
 var (
 	verbose     bool
@@ -26,6 +27,9 @@ func printVersion() {
 		exe = "unknown"
 	}
 	fmt.Printf("settle %s\n", Version)
+	if BuildTime != "" {
+		fmt.Printf("built: %s\n", BuildTime)
+	}
 	fmt.Printf("binary: %s\n", exe)
 }
 

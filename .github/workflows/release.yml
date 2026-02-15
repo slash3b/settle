@@ -21,7 +21,7 @@ jobs:
 
       - name: Build
         run: |
-          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.Version=${{ github.ref_name }}" -o settle-linux-amd64 .
+          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w -X main.Version=${{ github.ref_name }} -X 'main.BuildTime=$(date -u '+%Y-%m-%d %H:%M:%S UTC')'" -o settle-linux-amd64 .
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

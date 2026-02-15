@@ -1,12 +1,14 @@
 BINARY := settle
+BUILD_TIME := $(shell date -u '+%Y-%m-%d %H:%M:%S UTC')
+LDFLAGS := -X 'main.BuildTime=$(BUILD_TIME)'
 
 .PHONY: build
 build:
-	go build -o $(BINARY) .
+	go build -ldflags="$(LDFLAGS)" -o $(BINARY) .
 
 .PHONY: install
 install:
-	go install .
+	go install -ldflags="$(LDFLAGS)" .
 
 .PHONY: test
 test:
