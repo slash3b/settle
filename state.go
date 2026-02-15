@@ -148,6 +148,19 @@ var GetAvailableVersion = func(name string) (string, error) {
 	return "", fmt.Errorf("candidate version not found")
 }
 
+// CompareVersions compares two Debian package versions using dpkg.
+// Returns -1 if a < b, 0 if a == b, 1 if a > b.
+func CompareVersions(a, b string) int {
+	if a == b {
+		return 0
+	}
+	cmd := execCommand("dpkg", "--compare-versions", a, "lt", b)
+	if cmd.Run() == nil {
+		return -1 // a < b
+	}
+	return 1 // a >= b, and we already checked a != b
+}
+
 type versionResult struct {
 	name    string
 	version string
@@ -185,10 +198,14 @@ func (s *StateManager) SyncPackageVersions(packages []string) error {
 	}
 	close(jobs)
 
-	// Collect results
+	// Collect results — only update lockfile if installed version is higher
 	for range packages {
 		result := <-results
-		if result.version != "" {
+		if result.version == "" {
+			continue
+		}
+		existing, ok := s.GetPackageVersion(result.name)
+		if !ok || CompareVersions(result.version, existing) > 0 {
 			s.SetPackageVersion(result.name, result.version)
 		}
 	}

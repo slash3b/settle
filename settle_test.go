@@ -140,12 +140,17 @@ packages = ["curl"]
 	assert.Contains(t, out, "Done!")
 }
 
-func TestApply_UpdatesLockfileOnVersionMismatch(t *testing.T) {
+func TestApply_NoUpgradeWhenInstalledAboveLockfile(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
-	// vim installed at different version than lockfile
+	origExec := execCommand
+	// vim installed at HIGHER version than lockfile — no upgrade needed
 	execCommand = func(name string, arg ...string) *exec.Cmd {
+		// Let dpkg --compare-versions use real dpkg
+		if name == "dpkg" && len(arg) > 0 && arg[0] == "--compare-versions" {
+			return origExec(name, arg...)
+		}
 		return exec.Command("echo", "-n", "install ok installed")
 	}
 	mockInstalledVersion(map[string]string{
@@ -169,7 +174,49 @@ packages = ["vim"]
 		require.NoError(t, err)
 	})
 
-	assert.Contains(t, out, "Lockfile updated: 1")
+	assert.Contains(t, out, "All packages already installed")
+	assert.NotContains(t, out, "Need to upgrade")
+	assert.Contains(t, out, "Done!")
+}
+
+func TestApply_UpgradesWhenInstalledBelowLockfile(t *testing.T) {
+	saveMocks(t)
+	writeOsRelease(t, "ID=debian\n")
+
+	origExec := execCommand
+	// vim installed at LOWER version than lockfile — should upgrade
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		if name == "dpkg" && len(arg) > 0 && arg[0] == "--compare-versions" {
+			return origExec(name, arg...)
+		}
+		if name == "dpkg-query" {
+			return exec.Command("echo", "-n", "install ok installed")
+		}
+		return exec.Command("true")
+	}
+	mockInstalledVersion(map[string]string{
+		"vim": "9.0.1",
+	})
+	mockAvailableVersion(map[string]string{
+		"vim": "9.0.2",
+	})
+
+	configPath := withTempConfig(t, `
+[apt]
+packages = ["vim"]
+`)
+	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.2","installed_at":"2024-01-01T00:00:00Z"}}}`)
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		err := s.Apply()
+		require.NoError(t, err)
+	})
+
+	assert.Contains(t, out, "Need to upgrade: 1")
+	assert.Contains(t, out, "upgraded")
 	assert.Contains(t, out, "Done!")
 }
 
@@ -303,17 +350,16 @@ func TestApply_Verbose(t *testing.T) {
 		return exec.Command("echo", "-n", "install ok installed")
 	}
 	mockInstalledVersion(map[string]string{
-		"vim": "9.0.2",
+		"vim": "9.0.1",
 	})
 	mockAvailableVersion(map[string]string{
-		"vim": "9.0.2",
+		"vim": "9.0.1",
 	})
 
 	configPath := withTempConfig(t, `
 [apt]
 packages = ["vim"]
 `)
-	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
 
 	cfg, _ := loadConfig(configPath)
 	s := NewSettle(cfg, configPath, true, false)
@@ -324,7 +370,7 @@ packages = ["vim"]
 	})
 
 	assert.Contains(t, out, "Detected distribution: debian")
-	assert.Contains(t, out, "Lockfile updated:")
+	assert.Contains(t, out, "Done!")
 }
 
 func TestApply_NoPackagesConfigured(t *testing.T) {
@@ -749,14 +795,13 @@ func TestInstall_VerboseOutput(t *testing.T) {
 		return exec.Command("echo", "-n", "install ok installed")
 	}
 	mockInstalledVersion(map[string]string{
-		"vim": "9.0.2",
+		"vim": "9.0.1",
 	})
 
 	configPath := withTempConfig(t, `
 [apt]
 packages = ["vim"]
 `)
-	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
 
 	cfg, _ := loadConfig(configPath)
 	s := NewSettle(cfg, configPath, true, false)
@@ -766,7 +811,7 @@ packages = ["vim"]
 		require.NoError(t, err)
 	})
 
-	assert.Contains(t, out, "Lockfile updated:")
+	assert.Contains(t, out, "All packages already in config and installed")
 }
 
 func TestInstall_NotInConfigShowsReminder(t *testing.T) {
@@ -2392,15 +2437,23 @@ func TestApply_InstallLockfileSaveWarning(t *testing.T) {
 	assert.Contains(t, out, "Warning: failed to update lockfile")
 }
 
-func TestApply_VersionUpdateLockfileSaveWarning(t *testing.T) {
+func TestApply_UpgradeLockfileSaveWarning(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
+	origExec := execCommand
+	// vim installed at lower version than lockfile
 	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("echo", "-n", "install ok installed")
+		if name == "dpkg" && len(arg) > 0 && arg[0] == "--compare-versions" {
+			return origExec(name, arg...)
+		}
+		if name == "dpkg-query" {
+			return exec.Command("echo", "-n", "install ok installed")
+		}
+		return exec.Command("true")
 	}
 	mockInstalledVersion(map[string]string{
-		"vim": "9.0.2",
+		"vim": "9.0.1",
 	})
 	mockAvailableVersion(map[string]string{
 		"vim": "9.0.2",
@@ -2412,9 +2465,9 @@ func TestApply_VersionUpdateLockfileSaveWarning(t *testing.T) {
 [apt]
 packages = ["vim"]
 `), 0o644)
-	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
+	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.2","installed_at":"2024-01-01T00:00:00Z"}}}`)
 
-	// Make the lockfile read-only so save fails
+	// Make the lockfile read-only so save fails after upgrade
 	lockPath := filepath.Join(dir, "lockfile.json")
 	os.Chmod(lockPath, 0o444)
 	t.Cleanup(func() { os.Chmod(lockPath, 0o644) })

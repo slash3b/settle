@@ -11,6 +11,7 @@ const (
 	StatusInstalled = "installed"
 	StatusSkipped   = "ok"
 	StatusPinned    = "pinned"
+	StatusUpgraded  = "upgraded"
 )
 
 type PackageStatus struct {
@@ -30,7 +31,7 @@ func PrintPackageTable(packages []PackageStatus) {
 	skippedCount := 0
 
 	for _, pkg := range packages {
-		if pkg.Status == StatusInstalled || pkg.Status == StatusPinned {
+		if pkg.Status == StatusInstalled || pkg.Status == StatusPinned || pkg.Status == StatusUpgraded {
 			installed = append(installed, pkg)
 		} else if pkg.Status == StatusSkipped {
 			skippedCount++

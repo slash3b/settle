@@ -345,3 +345,91 @@ func TestSyncPackageVersions_ErrorSkipped(t *testing.T) {
 	_, ok = sm.GetPackageVersion("git")
 	assert.False(t, ok)
 }
+
+func TestCompareVersions(t *testing.T) {
+	// Equal versions
+	assert.Equal(t, 0, CompareVersions("9.0.1", "9.0.1"))
+
+	// Less than
+	assert.Equal(t, -1, CompareVersions("9.0.1", "9.0.2"))
+
+	// Greater than
+	assert.Equal(t, 1, CompareVersions("9.0.2", "9.0.1"))
+
+	// Real Debian version strings
+	assert.Equal(t, -1, CompareVersions("1.3.2-0.1", "1.4.6-01"))
+	assert.Equal(t, -1, CompareVersions("0.8.1-2+b9", "0.9.1"))
+	assert.Equal(t, -1, CompareVersions("6.12.63-1", "6.12.69-1"))
+
+	// Epoch versions
+	assert.Equal(t, 1, CompareVersions("1:2.0", "2.0"))
+}
+
+func TestSyncPackageVersions_NoDowngrade(t *testing.T) {
+	saveMocks(t)
+
+	// Lockfile has higher version (from another machine)
+	// Installed version is lower
+	mockInstalledVersion(map[string]string{
+		"btop": "1.3.2-0.1",
+		"duf":  "0.8.1-2+b9",
+	})
+
+	sm := NewStateManager("/tmp/config.toml")
+	// Pre-populate with higher versions (as if pulled from another machine)
+	sm.SetPackageVersion("btop", "1.4.6-01")
+	sm.SetPackageVersion("duf", "0.9.1")
+	sm.dirty = false
+
+	err := sm.SyncPackageVersions([]string{"btop", "duf"})
+	require.NoError(t, err)
+
+	// Versions should NOT be downgraded
+	v, _ := sm.GetPackageVersion("btop")
+	assert.Equal(t, "1.4.6-01", v)
+
+	v, _ = sm.GetPackageVersion("duf")
+	assert.Equal(t, "0.9.1", v)
+
+	// Should not be marked dirty since nothing changed
+	assert.False(t, sm.dirty)
+}
+
+func TestSyncPackageVersions_UpgradesHigher(t *testing.T) {
+	saveMocks(t)
+
+	// Installed version is higher than lockfile (upgraded externally)
+	mockInstalledVersion(map[string]string{
+		"vim": "9.0.2",
+	})
+
+	sm := NewStateManager("/tmp/config.toml")
+	sm.SetPackageVersion("vim", "9.0.1")
+	sm.dirty = false
+
+	err := sm.SyncPackageVersions([]string{"vim"})
+	require.NoError(t, err)
+
+	// Should be updated to higher version
+	v, _ := sm.GetPackageVersion("vim")
+	assert.Equal(t, "9.0.2", v)
+	assert.True(t, sm.dirty)
+}
+
+func TestSyncPackageVersions_NewPackage(t *testing.T) {
+	saveMocks(t)
+
+	mockInstalledVersion(map[string]string{
+		"curl": "7.88.1",
+	})
+
+	sm := NewStateManager("/tmp/config.toml")
+
+	err := sm.SyncPackageVersions([]string{"curl"})
+	require.NoError(t, err)
+
+	// New package should be added
+	v, ok := sm.GetPackageVersion("curl")
+	assert.True(t, ok)
+	assert.Equal(t, "7.88.1", v)
+}

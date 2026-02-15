@@ -119,28 +119,6 @@ func (s *Settle) Install(packages []string) error {
 		fmt.Printf("Note: could not load lockfile: %v\n", err)
 	}
 
-	// Check installed packages against lockfile versions
-	// Update lockfile to match installed versions (old versions may not be in repos)
-	for _, pkg := range packages {
-		if notInstalledSet[pkg] {
-			continue
-		}
-		lockVersion, ok := lockfile.GetPackageVersion(pkg)
-		if !ok {
-			continue
-		}
-		installedVersion, err := GetInstalledVersion(pkg)
-		if err != nil {
-			continue
-		}
-		if installedVersion != lockVersion {
-			lockfile.SetPackageVersion(pkg, installedVersion)
-			if s.verbose {
-				fmt.Printf("Lockfile updated: %s %s -> %s\n", pkg, lockVersion, installedVersion)
-			}
-		}
-	}
-
 	// Check if all packages are already in config AND installed
 	allDone := true
 	for _, pkg := range packages {
@@ -471,10 +449,9 @@ func (s *Settle) applyApt() error {
 	}
 
 	// Check installed packages against lockfile versions
-	// If a package is already installed at a different version, update the lockfile
-	// to match (the old version may no longer be available in repos).
-	// Lockfile pinning only applies to packages not yet installed (fresh installs).
-	var versionUpdated int
+	// If installed version is lower than lockfile, upgrade to lockfile version
+	var needUpgrade []string
+	needUpgradeSet := make(map[string]bool)
 	for _, pkg := range allPackages {
 		if missingSet[pkg] {
 			continue
@@ -487,27 +464,17 @@ func (s *Settle) applyApt() error {
 		if err != nil {
 			continue
 		}
-		if installedVersion != lockVersion {
-			lockfile.SetPackageVersion(pkg, installedVersion)
-			versionUpdated++
-			if s.verbose {
-				fmt.Printf("Lockfile updated: %s %s -> %s\n", pkg, lockVersion, installedVersion)
-			}
+		if CompareVersions(installedVersion, lockVersion) < 0 {
+			needUpgrade = append(needUpgrade, pkg)
+			needUpgradeSet[pkg] = true
 		}
 	}
 
-	installedCount := len(allPackages) - len(missingPackages)
+	installedCount := len(allPackages) - len(missingPackages) - len(needUpgrade)
 	fmt.Printf("Already installed: %d\n", installedCount)
 	fmt.Printf("Need to install: %d\n", len(missingPackages))
-	if versionUpdated > 0 {
-		fmt.Printf("Lockfile updated: %d\n", versionUpdated)
-	}
-
-	// Save lockfile if versions were updated
-	if versionUpdated > 0 && !s.dryRun {
-		if err := lockfile.Save(); err != nil {
-			fmt.Printf("Warning: failed to update lockfile: %v\n", err)
-		}
+	if len(needUpgrade) > 0 {
+		fmt.Printf("Need to upgrade: %d\n", len(needUpgrade))
 	}
 
 	// Filter out unknown packages and build versions map
@@ -520,6 +487,14 @@ func (s *Settle) applyApt() error {
 			unknown = append(unknown, pkg)
 			continue
 		}
+		installable = append(installable, pkg)
+		if version, ok := lockfile.GetPackageVersion(pkg); ok {
+			versions[pkg] = version
+		}
+	}
+
+	// Add packages that need upgrading to lockfile version
+	for _, pkg := range needUpgrade {
 		installable = append(installable, pkg)
 		if version, ok := lockfile.GetPackageVersion(pkg); ok {
 			versions[pkg] = version
@@ -593,6 +568,8 @@ func (s *Settle) applyApt() error {
 		status := StatusSkipped
 		if missingSet[pkg] && !unknownSet[pkg] {
 			status = StatusInstalled
+		} else if needUpgradeSet[pkg] {
+			status = StatusUpgraded
 		}
 		statuses = append(statuses, PackageStatus{
 			Name:   pkg,
