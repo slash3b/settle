@@ -3636,3 +3636,313 @@ version = "v1.0.0"
 	assert.Equal(t, 1, len(installed))
 	assert.Contains(t, out, "Done!")
 }
+
+// --- Go cleanup tests ---
+
+func TestApplyGo_RemovesOrphaned(t *testing.T) {
+	saveMocks(t)
+
+	binDir := t.TempDir()
+	// Create binary that will be orphaned
+	orphanBin := filepath.Join(binDir, "oldtool")
+	require.NoError(t, os.WriteFile(orphanBin, []byte("fake"), 0o755))
+	// Create binary for configured package
+	require.NoError(t, os.WriteFile(filepath.Join(binDir, "newtool"), []byte("fake"), 0o755))
+
+	GoBinPath = func() (string, error) { return binDir, nil }
+	GoInstall = func(path, version string, verbose bool) error { return nil }
+
+	configPath := withTempConfig(t, `
+[[go]]
+path = "github.com/user/newtool"
+version = "v1.0.0"
+`)
+	// Lockfile has both — oldtool is orphaned (not in config)
+	writeLockfile(t, configPath, `{
+		"packages": {
+			"oldtool": {"version": "v0.5.0", "manager": "go", "installed_at": "2026-01-01T00:00:00Z"},
+			"newtool": {"version": "v1.0.0", "manager": "go", "installed_at": "2026-01-01T00:00:00Z"}
+		}
+	}`)
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		err := s.applyGo()
+		require.NoError(t, err)
+	})
+
+	assert.Contains(t, out, "Removing 1 go binaries not in config")
+
+	// Binary should be deleted
+	_, err := os.Stat(orphanBin)
+	assert.True(t, os.IsNotExist(err))
+
+	// Lockfile should no longer have oldtool
+	lockfile := NewStateManager(configPath)
+	require.NoError(t, lockfile.Load())
+	_, ok := lockfile.GetPackageVersion("oldtool")
+	assert.False(t, ok)
+
+	// newtool should still be in lockfile
+	_, ok = lockfile.GetPackageVersion("newtool")
+	assert.True(t, ok)
+}
+
+func TestApplyGo_RemovesOrphaned_DryRun(t *testing.T) {
+	saveMocks(t)
+
+	binDir := t.TempDir()
+	orphanBin := filepath.Join(binDir, "oldtool")
+	require.NoError(t, os.WriteFile(orphanBin, []byte("fake"), 0o755))
+
+	GoBinPath = func() (string, error) { return binDir, nil }
+
+	configPath := withTempConfig(t, `
+[[go]]
+path = "github.com/user/newtool"
+version = "v1.0.0"
+`)
+	writeLockfile(t, configPath, `{
+		"packages": {
+			"oldtool": {"version": "v0.5.0", "manager": "go", "installed_at": "2026-01-01T00:00:00Z"}
+		}
+	}`)
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, true)
+
+	out := captureOutput(t, func() {
+		err := s.applyGo()
+		require.NoError(t, err)
+	})
+
+	assert.Contains(t, out, "[dry-run] Would remove go binaries not in config")
+	assert.Contains(t, out, "oldtool")
+
+	// Binary should NOT be deleted in dry-run
+	_, err := os.Stat(orphanBin)
+	assert.NoError(t, err)
+}
+
+// --- Dotfile cleanup tests ---
+
+func TestApplyDotfiles_TracksInLockfile(t *testing.T) {
+	saveMocks(t)
+
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "sources")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "vimrc"), []byte("set nocompatible"), 0o644))
+
+	destFile := filepath.Join(dir, ".vimrc")
+
+	configPath := withTempConfig(t, `
+[dotfiles]
+source_dir = "`+srcDir+`"
+
+[[dotfiles.file]]
+src = "vimrc"
+dest = "`+destFile+`"
+`)
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	captureOutput(t, func() {
+		err := s.applyDotfiles()
+		require.NoError(t, err)
+	})
+
+	// Verify lockfile has the dotfile entry
+	lockfile := NewStateManager(configPath)
+	require.NoError(t, lockfile.Load())
+
+	all := lockfile.GetAllDotfiles()
+	assert.Equal(t, 1, len(all))
+	assert.Equal(t, filepath.Join(srcDir, "vimrc"), all[destFile].Source)
+	assert.Equal(t, "link", all[destFile].Mode)
+}
+
+func TestApplyDotfiles_CleansOrphanedLink(t *testing.T) {
+	saveMocks(t)
+
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "sources")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+
+	srcFile := filepath.Join(srcDir, "vimrc")
+	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
+
+	// Create a symlink that will become orphaned
+	orphanDest := filepath.Join(dir, ".oldrc")
+	require.NoError(t, os.Symlink(srcFile, orphanDest))
+
+	// Config only has .vimrc, not .oldrc
+	destFile := filepath.Join(dir, ".vimrc")
+	configPath := withTempConfig(t, `
+[dotfiles]
+source_dir = "`+srcDir+`"
+
+[[dotfiles.file]]
+src = "vimrc"
+dest = "`+destFile+`"
+`)
+
+	// Lockfile tracks both .vimrc and .oldrc
+	writeLockfile(t, configPath, `{
+		"packages": {},
+		"dotfiles": {
+			"`+destFile+`": {"source": "`+srcFile+`", "mode": "link"},
+			"`+orphanDest+`": {"source": "`+srcFile+`", "mode": "link"}
+		}
+	}`)
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		err := s.applyDotfiles()
+		require.NoError(t, err)
+	})
+
+	assert.Contains(t, out, "Replaced symlink with copy")
+	assert.Contains(t, out, "Cleaned up 1 orphaned dotfiles")
+
+	// Orphaned symlink should be replaced with a regular file
+	info, err := os.Lstat(orphanDest)
+	require.NoError(t, err)
+	assert.True(t, info.Mode().IsRegular(), "should be a regular file, not a symlink")
+
+	// Content should match the source
+	content, err := os.ReadFile(orphanDest)
+	require.NoError(t, err)
+	assert.Equal(t, "set nocompatible", string(content))
+
+	// Lockfile should no longer have the orphaned entry
+	lockfile := NewStateManager(configPath)
+	require.NoError(t, lockfile.Load())
+	_, hasOrphan := lockfile.GetAllDotfiles()[orphanDest]
+	assert.False(t, hasOrphan)
+}
+
+func TestApplyDotfiles_CleansOrphanedLinkBroken(t *testing.T) {
+	saveMocks(t)
+
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "sources")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+
+	// The source referenced by the orphaned entry no longer exists
+	orphanDest := filepath.Join(dir, ".oldrc")
+	require.NoError(t, os.Symlink("/nonexistent/source", orphanDest))
+
+	configPath := withTempConfig(t, `
+[dotfiles]
+source_dir = "`+srcDir+`"
+`)
+
+	writeLockfile(t, configPath, `{
+		"packages": {},
+		"dotfiles": {
+			"`+orphanDest+`": {"source": "/nonexistent/source", "mode": "link"}
+		}
+	}`)
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		err := s.applyDotfiles()
+		require.NoError(t, err)
+	})
+
+	assert.Contains(t, out, "Removed orphaned link")
+
+	// Broken symlink should be removed
+	_, err := os.Lstat(orphanDest)
+	assert.True(t, os.IsNotExist(err))
+}
+
+func TestApplyDotfiles_CleansOrphanedCopy(t *testing.T) {
+	saveMocks(t)
+
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "sources")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+
+	// Orphaned copy — should be left in place
+	orphanDest := filepath.Join(dir, ".oldrc")
+	require.NoError(t, os.WriteFile(orphanDest, []byte("old content"), 0o644))
+
+	configPath := withTempConfig(t, `
+[dotfiles]
+source_dir = "`+srcDir+`"
+`)
+
+	writeLockfile(t, configPath, `{
+		"packages": {},
+		"dotfiles": {
+			"`+orphanDest+`": {"source": "/some/source", "mode": "copy"}
+		}
+	}`)
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	captureOutput(t, func() {
+		err := s.applyDotfiles()
+		require.NoError(t, err)
+	})
+
+	// File should still exist (copy mode leaves files in place)
+	content, err := os.ReadFile(orphanDest)
+	require.NoError(t, err)
+	assert.Equal(t, "old content", string(content))
+
+	// But lockfile entry should be removed
+	lockfile := NewStateManager(configPath)
+	require.NoError(t, lockfile.Load())
+	assert.Equal(t, 0, len(lockfile.GetAllDotfiles()))
+}
+
+func TestApplyDotfiles_DryRunNoCleanup(t *testing.T) {
+	saveMocks(t)
+
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "sources")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+
+	srcFile := filepath.Join(srcDir, "vimrc")
+	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
+
+	orphanDest := filepath.Join(dir, ".oldrc")
+	require.NoError(t, os.Symlink(srcFile, orphanDest))
+
+	configPath := withTempConfig(t, `
+[dotfiles]
+source_dir = "`+srcDir+`"
+`)
+
+	writeLockfile(t, configPath, `{
+		"packages": {},
+		"dotfiles": {
+			"`+orphanDest+`": {"source": "`+srcFile+`", "mode": "link"}
+		}
+	}`)
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, true)
+
+	out := captureOutput(t, func() {
+		err := s.applyDotfiles()
+		require.NoError(t, err)
+	})
+
+	assert.Contains(t, out, "[dry-run] Would clean up orphaned dotfile")
+
+	// Symlink should NOT be removed in dry-run
+	_, err := os.Lstat(orphanDest)
+	assert.NoError(t, err)
+}

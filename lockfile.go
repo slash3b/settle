@@ -18,10 +18,17 @@ type PackageState struct {
 	InstalledAt time.Time `json:"installed_at"`
 }
 
+// DotfileState tracks a managed dotfile in the lockfile
+type DotfileState struct {
+	Source string `json:"source"` // absolute source path
+	Mode   string `json:"mode"`   // "link" or "copy"
+}
+
 // State represents the settle state file
 type State struct {
-	Packages  map[string]PackageState `json:"packages"`
-	UpdatedAt time.Time               `json:"updated_at"`
+	Packages  map[string]PackageState  `json:"packages"`
+	Dotfiles  map[string]DotfileState  `json:"dotfiles,omitempty"`
+	UpdatedAt time.Time                `json:"updated_at"`
 }
 
 // StateManager handles reading and writing state
@@ -41,6 +48,7 @@ func NewStateManager(configPath string) *StateManager {
 		path: statePath,
 		state: &State{
 			Packages: make(map[string]PackageState),
+			Dotfiles: make(map[string]DotfileState),
 		},
 	}
 }
@@ -58,6 +66,11 @@ func (s *StateManager) Load() error {
 
 	if err := json.Unmarshal(data, s.state); err != nil {
 		return fmt.Errorf("failed to parse state file: %w", err)
+	}
+
+	// Ensure maps are initialized (old lockfiles may lack dotfiles key)
+	if s.state.Dotfiles == nil {
+		s.state.Dotfiles = make(map[string]DotfileState)
 	}
 
 	return nil
@@ -249,4 +262,27 @@ func (s *StateManager) RemovePackage(name string) {
 		delete(s.state.Packages, name)
 		s.dirty = true
 	}
+}
+
+// SetDotfile records a managed dotfile in the lockfile
+func (s *StateManager) SetDotfile(dest, source, mode string) {
+	existing, ok := s.state.Dotfiles[dest]
+	if ok && existing.Source == source && existing.Mode == mode {
+		return
+	}
+	s.state.Dotfiles[dest] = DotfileState{Source: source, Mode: mode}
+	s.dirty = true
+}
+
+// RemoveDotfile removes a dotfile entry from the lockfile
+func (s *StateManager) RemoveDotfile(dest string) {
+	if _, ok := s.state.Dotfiles[dest]; ok {
+		delete(s.state.Dotfiles, dest)
+		s.dirty = true
+	}
+}
+
+// GetAllDotfiles returns all tracked dotfiles
+func (s *StateManager) GetAllDotfiles() map[string]DotfileState {
+	return s.state.Dotfiles
 }

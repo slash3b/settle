@@ -889,48 +889,117 @@ func (s *Settle) listDotfiles() error {
 func (s *Settle) applyDotfiles() error {
 	cfg := s.config.Dotfiles
 
-	if len(cfg.Files) == 0 {
-		fmt.Println("No dotfiles configured")
-		return nil
+	lockfile := NewStateManager(s.configPath)
+	if err := lockfile.Load(); err != nil && s.verbose {
+		fmt.Printf("Note: could not load lockfile: %v\n", err)
 	}
 
-	manager := NewDotfilesManager(cfg.SourceDir, s.verbose)
+	if len(cfg.Files) == 0 {
+		fmt.Println("No dotfiles configured")
+	} else {
+		manager := NewDotfilesManager(cfg.SourceDir, s.verbose)
 
-	fmt.Printf("\nChecking %d dotfile links...\n", len(cfg.Files))
+		fmt.Printf("\nChecking %d dotfile links...\n", len(cfg.Files))
 
-	linked := 0
-	skipped := 0
-	var errors []string
+		linked := 0
+		skipped := 0
+		var errors []string
 
+		for _, link := range cfg.Files {
+			created, err := manager.Apply(link, s.dryRun)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("%s: %v", link.Dest, err))
+				continue
+			}
+
+			if created {
+				linked++
+				if s.dryRun {
+					fmt.Printf("[dry-run] Would link: %s -> %s\n", link.Dest, link.Src)
+				} else if s.verbose {
+					fmt.Printf("Linked: %s -> %s\n", link.Dest, link.Src)
+				}
+			} else {
+				skipped++
+			}
+
+			// Track in lockfile
+			if !s.dryRun {
+				src := filepath.Join(manager.sourceDir, link.Src)
+				mode := link.Mode
+				if mode == "" {
+					mode = "link"
+				}
+				lockfile.SetDotfile(link.Dest, src, mode)
+			}
+		}
+
+		if s.dryRun {
+			fmt.Printf("\n[dry-run] Would create %d links, %d already correct\n", linked, skipped)
+		} else {
+			fmt.Printf("Created %d links, %d already correct\n", linked, skipped)
+		}
+
+		if len(errors) > 0 {
+			fmt.Println("\nErrors:")
+			for _, e := range errors {
+				fmt.Printf("  - %s\n", e)
+			}
+		}
+	}
+
+	// Clean up orphaned dotfiles (in lockfile but not in config)
+	configDests := make(map[string]bool)
 	for _, link := range cfg.Files {
-		created, err := manager.Apply(link, s.dryRun)
-		if err != nil {
-			errors = append(errors, fmt.Sprintf("%s: %v", link.Dest, err))
+		configDests[link.Dest] = true
+	}
+
+	removed := 0
+	for dest, state := range lockfile.GetAllDotfiles() {
+		if configDests[dest] {
 			continue
 		}
 
-		if created {
-			linked++
-			if s.dryRun {
-				fmt.Printf("[dry-run] Would link: %s -> %s\n", link.Dest, link.Src)
-			} else if s.verbose {
-				fmt.Printf("Linked: %s -> %s\n", link.Dest, link.Src)
-			}
-		} else {
-			skipped++
+		expandedDest := expandPath(dest)
+
+		if s.dryRun {
+			fmt.Printf("[dry-run] Would clean up orphaned dotfile: %s\n", dest)
+			removed++
+			continue
 		}
+
+		if state.Mode == "link" {
+			// Replace symlink with a copy of the source file if source exists
+			if _, err := os.Stat(state.Source); err == nil {
+				// Remove symlink first, then copy (copyFile follows symlinks)
+				os.Remove(expandedDest)
+				if err := copyFile(state.Source, expandedDest); err != nil {
+					fmt.Printf("Warning: failed to replace symlink %s with copy: %v\n", dest, err)
+				} else {
+					fmt.Printf("Replaced symlink with copy: %s\n", dest)
+				}
+			} else {
+				// Source gone — remove broken link
+				if err := os.Remove(expandedDest); err != nil && !os.IsNotExist(err) {
+					fmt.Printf("Warning: failed to remove orphaned link %s: %v\n", dest, err)
+				} else {
+					fmt.Printf("Removed orphaned link: %s\n", dest)
+				}
+			}
+		}
+		// Copy mode: leave the file in place (it's already a standalone copy)
+
+		lockfile.RemoveDotfile(dest)
+		removed++
 	}
 
-	if s.dryRun {
-		fmt.Printf("\n[dry-run] Would create %d links, %d already correct\n", linked, skipped)
-	} else {
-		fmt.Printf("Created %d links, %d already correct\n", linked, skipped)
+	if removed > 0 && !s.dryRun {
+		fmt.Printf("Cleaned up %d orphaned dotfiles\n", removed)
 	}
 
-	if len(errors) > 0 {
-		fmt.Println("\nErrors:")
-		for _, e := range errors {
-			fmt.Printf("  - %s\n", e)
+	if !s.dryRun {
+		if err := lockfile.Save(); err != nil {
+			fmt.Printf("Warning: failed to update lockfile: %v\n", err)
 		}
 	}
 
@@ -1104,6 +1173,37 @@ func (s *Settle) applyGo() error {
 	}
 
 	PrintPackageTable(statuses)
+
+	// Clean up orphaned go binaries (in lockfile but not in config)
+	configSet := make(map[string]bool)
+	for _, pkg := range s.config.Go {
+		configSet[GoPackageBinaryName(pkg.Path)] = true
+	}
+
+	var toRemove []string
+	for _, name := range lockfile.GetPackagesByManager("go") {
+		if !configSet[name] {
+			toRemove = append(toRemove, name)
+		}
+	}
+
+	if len(toRemove) > 0 {
+		if s.dryRun {
+			fmt.Println("\n[dry-run] Would remove go binaries not in config:")
+			for _, name := range toRemove {
+				fmt.Printf("  - %s\n", name)
+			}
+		} else {
+			fmt.Printf("\nRemoving %d go binaries not in config...\n", len(toRemove))
+			for _, name := range toRemove {
+				binPath := filepath.Join(binDir, name)
+				if err := os.Remove(binPath); err != nil && !os.IsNotExist(err) {
+					fmt.Printf("Warning: failed to remove %s: %v\n", name, err)
+				}
+				lockfile.RemovePackage(name)
+			}
+		}
+	}
 
 	if !s.dryRun {
 		if err := lockfile.Save(); err != nil {
