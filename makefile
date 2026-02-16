@@ -30,3 +30,7 @@ fmt:
 		--section dot \
 		--skip-generated \
 		.
+
+.PHONY: lint
+lint:
+	@golangci-lint run

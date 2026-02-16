@@ -438,3 +438,105 @@ func TestSyncPackageVersions_NewPackage(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, "7.88.1", v)
 }
+
+// --- Dotfile state tests ---
+
+func TestStateManager_SetGetDotfile(t *testing.T) {
+	sm := NewStateManager("/tmp/config.toml")
+
+	// Empty initially
+	all := sm.GetAllDotfiles()
+	assert.Equal(t, 0, len(all))
+
+	// Set and get
+	sm.SetDotfile("~/.vimrc", "/home/user/dotfiles/sources/vimrc", "link")
+	all = sm.GetAllDotfiles()
+	assert.Equal(t, 1, len(all))
+	assert.Equal(t, "/home/user/dotfiles/sources/vimrc", all["~/.vimrc"].Source)
+	assert.Equal(t, "link", all["~/.vimrc"].Mode)
+}
+
+func TestStateManager_SetDotfileIdempotent(t *testing.T) {
+	dir := t.TempDir()
+	sm := NewStateManager(filepath.Join(dir, "config.toml"))
+
+	sm.SetDotfile("~/.vimrc", "/src/vimrc", "link")
+	require.NoError(t, sm.Save())
+
+	// Set same value again — should not mark dirty
+	sm.SetDotfile("~/.vimrc", "/src/vimrc", "link")
+	assert.False(t, sm.dirty)
+}
+
+func TestStateManager_SetDotfileUpdates(t *testing.T) {
+	sm := NewStateManager("/tmp/config.toml")
+
+	sm.SetDotfile("~/.vimrc", "/src/vimrc", "link")
+	sm.dirty = false
+
+	// Update source — should mark dirty
+	sm.SetDotfile("~/.vimrc", "/new/vimrc", "link")
+	assert.True(t, sm.dirty)
+	assert.Equal(t, "/new/vimrc", sm.GetAllDotfiles()["~/.vimrc"].Source)
+}
+
+func TestStateManager_RemoveDotfile(t *testing.T) {
+	sm := NewStateManager("/tmp/config.toml")
+	sm.SetDotfile("~/.vimrc", "/src/vimrc", "link")
+	sm.dirty = false
+
+	sm.RemoveDotfile("~/.vimrc")
+
+	assert.True(t, sm.dirty)
+	assert.Equal(t, 0, len(sm.GetAllDotfiles()))
+}
+
+func TestStateManager_RemoveDotfileNonexistent(t *testing.T) {
+	sm := NewStateManager("/tmp/config.toml")
+
+	// Should not panic or mark dirty
+	sm.RemoveDotfile("nonexistent")
+	assert.False(t, sm.dirty)
+}
+
+func TestStateManager_DotfilesPersist(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+
+	// Save dotfiles
+	sm := NewStateManager(configPath)
+	sm.SetDotfile("~/.vimrc", "/src/vimrc", "link")
+	sm.SetDotfile("~/.bashrc", "/src/bashrc", "copy")
+	require.NoError(t, sm.Save())
+
+	// Load and verify
+	sm2 := NewStateManager(configPath)
+	require.NoError(t, sm2.Load())
+
+	all := sm2.GetAllDotfiles()
+	assert.Equal(t, 2, len(all))
+	assert.Equal(t, "link", all["~/.vimrc"].Mode)
+	assert.Equal(t, "copy", all["~/.bashrc"].Mode)
+}
+
+func TestStateManager_LoadOldLockfileWithoutDotfiles(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, "config.toml")
+
+	// Old lockfile without dotfiles key
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte(`{
+		"packages": {"vim": {"version": "9.0.1", "installed_at": "2026-01-01T00:00:00Z"}}
+	}`), 0o644))
+
+	sm := NewStateManager(configPath)
+	require.NoError(t, sm.Load())
+
+	// Dotfiles map should be initialized (not nil)
+	all := sm.GetAllDotfiles()
+	assert.NotNil(t, all)
+	assert.Equal(t, 0, len(all))
+
+	// Can still set dotfiles
+	sm.SetDotfile("~/.vimrc", "/src/vimrc", "link")
+	assert.Equal(t, 1, len(sm.GetAllDotfiles()))
+}
