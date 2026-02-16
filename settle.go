@@ -972,8 +972,9 @@ func (s *Settle) applyDotfiles() error {
 			// Replace symlink with a copy of the source file if source exists
 			if _, err := os.Stat(state.Source); err == nil {
 				// Remove symlink first, then copy (copyFile follows symlinks)
-				os.Remove(expandedDest)
-				if err := copyFile(state.Source, expandedDest); err != nil {
+				if err := os.Remove(expandedDest); err != nil && !os.IsNotExist(err) {
+					fmt.Printf("Warning: failed to remove symlink %s: %v\n", dest, err)
+				} else if err := copyFile(state.Source, expandedDest); err != nil {
 					fmt.Printf("Warning: failed to replace symlink %s with copy: %v\n", dest, err)
 				} else {
 					fmt.Printf("Replaced symlink with copy: %s\n", dest)
