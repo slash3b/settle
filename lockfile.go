@@ -26,9 +26,9 @@ type DotfileState struct {
 
 // State represents the settle state file
 type State struct {
-	Packages  map[string]PackageState  `json:"packages"`
-	Dotfiles  map[string]DotfileState  `json:"dotfiles,omitempty"`
-	UpdatedAt time.Time                `json:"updated_at"`
+	Packages  map[string]PackageState `json:"packages"`
+	Dotfiles  map[string]DotfileState `json:"dotfiles,omitempty"`
+	UpdatedAt time.Time               `json:"updated_at"`
 }
 
 // StateManager handles reading and writing state
