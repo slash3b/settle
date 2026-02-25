@@ -12,6 +12,7 @@ const defaultConfigPath = "config.toml"
 type PostHook struct {
 	Name        string `toml:"name"`
 	PostInstall string `toml:"post_install"`
+	Sudo        bool   `toml:"sudo"` // run the post-install script with sudo
 }
 
 type AptConfig struct {
@@ -26,9 +27,11 @@ type DotfilesConfig struct {
 }
 
 type Dotfile struct {
-	Src  string `toml:"src"`
-	Dest string `toml:"dest"`
-	Mode string `toml:"mode"` // "link" (default) or "copy"
+	Src        string `toml:"src"`
+	Dest       string `toml:"dest"`
+	Mode       string `toml:"mode"`       // "link" (default) or "copy"
+	Executable bool   `toml:"executable"` // chmod +x after deploy
+	Sudo       bool   `toml:"sudo"`       // use sudo for all fs operations
 }
 
 type GitRepo struct {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -803,6 +804,72 @@ func TestCopyFile_DestOpenError(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestApply_Executable_Link(t *testing.T) {
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "sources")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+
+	srcFile := filepath.Join(srcDir, "postswitch")
+	require.NoError(t, os.WriteFile(srcFile, []byte("#!/bin/sh\necho hello"), 0o644))
+
+	destFile := filepath.Join(dir, "postswitch")
+
+	dm := NewDotfilesManager(srcDir, false)
+	created, err := dm.Apply(Dotfile{Src: "postswitch", Dest: destFile, Executable: true}, false)
+	require.NoError(t, err)
+	assert.True(t, created)
+
+	// os.Chmod follows the symlink, so the source file should have the executable bit
+	info, err := os.Stat(srcFile)
+	require.NoError(t, err)
+	assert.NotZero(t, info.Mode()&0o111, "expected source file to be executable")
+}
+
+func TestApply_Executable_Copy(t *testing.T) {
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "sources")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+
+	srcFile := filepath.Join(srcDir, "postswitch")
+	require.NoError(t, os.WriteFile(srcFile, []byte("#!/bin/sh\necho hello"), 0o644))
+
+	destFile := filepath.Join(dir, "postswitch")
+
+	dm := NewDotfilesManager(srcDir, false)
+	created, err := dm.Apply(Dotfile{Src: "postswitch", Dest: destFile, Mode: "copy", Executable: true}, false)
+	require.NoError(t, err)
+	assert.True(t, created)
+
+	info, err := os.Stat(destFile)
+	require.NoError(t, err)
+	assert.NotZero(t, info.Mode()&0o111, "expected dest file to be executable")
+}
+
+func TestApply_Executable_DryRun(t *testing.T) {
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "sources")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+
+	srcFile := filepath.Join(srcDir, "postswitch")
+	require.NoError(t, os.WriteFile(srcFile, []byte("#!/bin/sh\necho hello"), 0o644))
+
+	destFile := filepath.Join(dir, "postswitch")
+
+	dm := NewDotfilesManager(srcDir, false)
+	created, err := dm.Apply(Dotfile{Src: "postswitch", Dest: destFile, Executable: true}, true)
+	require.NoError(t, err)
+	assert.True(t, created)
+
+	// No file should be created in dry-run
+	_, err = os.Lstat(destFile)
+	assert.True(t, os.IsNotExist(err))
+
+	// Source should NOT have been chmoded
+	info, err := os.Stat(srcFile)
+	require.NoError(t, err)
+	assert.Zero(t, info.Mode()&0o111, "expected source NOT to be executable in dry-run")
+}
+
 func TestApply_SourceMissing(t *testing.T) {
 	dir := t.TempDir()
 	srcDir := filepath.Join(dir, "sources")
@@ -812,4 +879,90 @@ func TestApply_SourceMissing(t *testing.T) {
 	_, err := dm.Apply(Dotfile{Src: "nonexistent", Dest: filepath.Join(dir, ".vimrc")}, false)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "source file does not exist")
+}
+
+func TestApply_Sudo_LinkMissing(t *testing.T) {
+	saveMocks(t)
+
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "sources")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+
+	srcFile := filepath.Join(srcDir, "20-amdgpu.conf")
+	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
+
+	destFile := filepath.Join(dir, "etc", "20-amdgpu.conf")
+
+	var calls []cmdCall
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		calls = append(calls, cmdCall{Name: name, Args: arg})
+		return exec.Command("true")
+	}
+
+	dm := NewDotfilesManager(srcDir, false)
+	created, err := dm.Apply(Dotfile{Src: "20-amdgpu.conf", Dest: destFile, Sudo: true}, false)
+	require.NoError(t, err)
+	assert.True(t, created)
+
+	require.Len(t, calls, 2)
+	assert.Equal(t, "sudo", calls[0].Name)
+	assert.Equal(t, []string{"mkdir", "-p", filepath.Dir(destFile)}, calls[0].Args)
+	assert.Equal(t, "sudo", calls[1].Name)
+	assert.Equal(t, []string{"ln", "-sf", srcFile, destFile}, calls[1].Args)
+}
+
+func TestApply_Sudo_CopyMissing(t *testing.T) {
+	saveMocks(t)
+
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "sources")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+
+	srcFile := filepath.Join(srcDir, "20-amdgpu.conf")
+	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
+
+	destFile := filepath.Join(dir, "etc", "20-amdgpu.conf")
+
+	var calls []cmdCall
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		calls = append(calls, cmdCall{Name: name, Args: arg})
+		return exec.Command("true")
+	}
+
+	dm := NewDotfilesManager(srcDir, false)
+	created, err := dm.Apply(Dotfile{Src: "20-amdgpu.conf", Dest: destFile, Mode: "copy", Sudo: true}, false)
+	require.NoError(t, err)
+	assert.True(t, created)
+
+	require.Len(t, calls, 2)
+	assert.Equal(t, "sudo", calls[0].Name)
+	assert.Equal(t, []string{"mkdir", "-p", filepath.Dir(destFile)}, calls[0].Args)
+	assert.Equal(t, "sudo", calls[1].Name)
+	assert.Equal(t, []string{"cp", srcFile, destFile}, calls[1].Args)
+}
+
+func TestApply_Sudo_DryRun(t *testing.T) {
+	saveMocks(t)
+
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "sources")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "20-amdgpu.conf"), []byte("content"), 0o644))
+
+	destFile := filepath.Join(dir, "etc", "20-amdgpu.conf")
+
+	var calls []cmdCall
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		calls = append(calls, cmdCall{Name: name, Args: arg})
+		return exec.Command("true")
+	}
+
+	dm := NewDotfilesManager(srcDir, false)
+	created, err := dm.Apply(Dotfile{Src: "20-amdgpu.conf", Dest: destFile, Sudo: true}, true)
+	require.NoError(t, err)
+	assert.True(t, created)
+
+	// No sudo commands should be issued in dry-run
+	assert.Empty(t, calls)
 }

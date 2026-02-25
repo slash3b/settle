@@ -27,7 +27,7 @@ func NewSettle(config *Config, configPath string, verbose, dryRun bool) *Settle 
 	}
 }
 
-// Apply applies the configuration by installing missing packages across all configured managers
+// Apply applies the configuration: installs missing packages, links dotfiles, clones repos.
 func (s *Settle) Apply() error {
 	if s.dryRun {
 		fmt.Println("[dry-run mode - no changes will be made]")
@@ -43,7 +43,6 @@ func (s *Settle) Apply() error {
 
 	managersFound := 0
 
-	// Handle apt packages
 	if s.config.Apt != nil {
 		managersFound++
 		if err := s.applyApt(); err != nil {
@@ -51,7 +50,6 @@ func (s *Settle) Apply() error {
 		}
 	}
 
-	// Handle Dotfiles
 	if s.config.Dotfiles != nil {
 		managersFound++
 		if err := s.applyDotfiles(); err != nil {
@@ -59,7 +57,6 @@ func (s *Settle) Apply() error {
 		}
 	}
 
-	// Handle Git repos
 	if len(s.config.Git) > 0 {
 		managersFound++
 		if err := s.applyGit(); err != nil {
@@ -67,7 +64,6 @@ func (s *Settle) Apply() error {
 		}
 	}
 
-	// Handle Go packages
 	if len(s.config.Go) > 0 {
 		managersFound++
 		if err := s.applyGo(); err != nil {
@@ -79,244 +75,15 @@ func (s *Settle) Apply() error {
 		return fmt.Errorf("no packages, dotfiles, git repos, or go packages configured in config.toml")
 	}
 
-	// Sync state file (skip in dry-run mode)
-	if !s.dryRun {
-		if err := s.syncState(); err != nil {
-			fmt.Printf("Warning: failed to sync state: %v\n", err)
-		}
-	}
-
 	fmt.Println("Done!")
 	return nil
 }
 
-// Install adds packages to config.toml and installs them
-func (s *Settle) Install(packages []string) error {
-	if len(packages) == 0 {
-		return fmt.Errorf("no packages specified")
-	}
-
-	// Check which packages are already in config
-	inConfig := make(map[string]bool)
-	if s.config.Apt != nil {
-		for _, pkg := range s.config.Apt.Packages {
-			inConfig[pkg] = true
-		}
-		for _, pkg := range s.config.Apt.PostHooks {
-			inConfig[pkg.Name] = true
-		}
-	}
-
-	// Check which packages are already installed on system
-	distro := DetectDistro()
-	if !distro.IsDebianBased() {
-		return fmt.Errorf("unsupported distribution: %s", distro)
-	}
-	manager := NewDebianManager(s.verbose)
-
-	notInstalled, err := manager.CheckInstalled(packages)
-	if err != nil {
-		return fmt.Errorf("error checking packages: %w", err)
-	}
-	notInstalledSet := make(map[string]bool)
-	for _, pkg := range notInstalled {
-		notInstalledSet[pkg] = true
-	}
-
-	// Load lockfile for version pinning
-	lockfile := NewStateManager(s.configPath)
-	if err := lockfile.Load(); err != nil && s.verbose {
-		fmt.Printf("Note: could not load lockfile: %v\n", err)
-	}
-
-	// Check if all packages are already in config AND installed
-	allDone := true
-	for _, pkg := range packages {
-		if !inConfig[pkg] || notInstalledSet[pkg] {
-			allDone = false
-			break
-		}
-	}
-	if allDone {
-		fmt.Println("All packages already in config and installed")
-		return nil
-	}
-
-	// Ensure apt section exists
-	if s.config.Apt == nil {
-		s.config.Apt = &AptConfig{
-			Packages: []string{},
-		}
-	}
-
-	// Filter to packages not yet in config
-	var toAdd []string
-	for _, pkg := range packages {
-		if inConfig[pkg] {
-			if s.verbose {
-				fmt.Printf("Package %s already in config\n", pkg)
-			}
-		} else {
-			toAdd = append(toAdd, pkg)
-		}
-	}
-
-	// Filter to packages not installed on system
-	var toInstall []string
-	for _, pkg := range packages {
-		if notInstalledSet[pkg] {
-			toInstall = append(toInstall, pkg)
-		}
-	}
-
-	// Install packages
-	if len(toInstall) > 0 {
-		if s.dryRun {
-			fmt.Printf("[dry-run] Would install: %v\n", toInstall)
-		} else {
-			if err := manager.Install(toInstall, nil); err != nil {
-				return fmt.Errorf("error installing packages: %w", err)
-			}
-
-			// Update lockfile
-			for _, pkg := range toInstall {
-				version, err := GetInstalledVersion(pkg)
-				if err == nil {
-					lockfile.SetPackageVersion(pkg, version, "apt")
-				}
-			}
-			if err := lockfile.Save(); err != nil {
-				fmt.Printf("Warning: failed to update lockfile: %v\n", err)
-			}
-		}
-	} else {
-		fmt.Println("All packages already installed on system")
-	}
-
-	// Remind user to add to config (if not already there)
-	if len(toAdd) > 0 {
-		fmt.Println("\nTo track these packages, add to your config.toml:")
-		for _, pkg := range toAdd {
-			fmt.Printf("    \"%s\",\n", pkg)
-		}
-	}
-
-	return nil
-}
-
-// Remove removes packages from config.toml and uninstalls them
-func (s *Settle) Remove(packages []string) error {
-	if len(packages) == 0 {
-		return fmt.Errorf("no packages specified")
-	}
-
-	if s.config.Apt == nil {
-		fmt.Println("No packages configured")
-		return nil
-	}
-
-	// Check which packages are in config
-	inConfig := make(map[string]bool)
-	for _, pkg := range s.config.Apt.Packages {
-		inConfig[pkg] = true
-	}
-	for _, pkg := range s.config.Apt.PostHooks {
-		inConfig[pkg.Name] = true
-	}
-
-	// Check which packages are installed on system
-	distro := DetectDistro()
-	if !distro.IsDebianBased() {
-		return fmt.Errorf("unsupported distribution: %s", distro)
-	}
-	manager := NewDebianManager(s.verbose)
-
-	notInstalled, err := manager.CheckInstalled(packages)
-	if err != nil {
-		return fmt.Errorf("error checking packages: %w", err)
-	}
-	installedSet := make(map[string]bool)
-	for _, pkg := range packages {
-		installedSet[pkg] = true
-	}
-	for _, pkg := range notInstalled {
-		delete(installedSet, pkg)
-	}
-
-	// Check if none of the packages are in config or installed
-	anyWork := false
-	for _, pkg := range packages {
-		if inConfig[pkg] || installedSet[pkg] {
-			anyWork = true
-			break
-		}
-	}
-	if !anyWork {
-		fmt.Println("None of the packages are in config or installed")
-		return nil
-	}
-
-	// Filter to packages in config
-	var toRemoveFromConfig []string
-	for _, pkg := range packages {
-		if inConfig[pkg] {
-			toRemoveFromConfig = append(toRemoveFromConfig, pkg)
-		} else if s.verbose {
-			fmt.Printf("Package %s not in config\n", pkg)
-		}
-	}
-
-	// Remind user to remove from config
-	if len(toRemoveFromConfig) > 0 && !s.dryRun {
-		fmt.Println("\nRemember to remove from your config.toml:")
-		for _, pkg := range toRemoveFromConfig {
-			fmt.Printf("    \"%s\"\n", pkg)
-		}
-	} else if len(toRemoveFromConfig) > 0 {
-		fmt.Printf("[dry-run] Would remind to remove from config: %v\n", toRemoveFromConfig)
-	}
-
-	// Filter to packages that are installed
-	var toUninstall []string
-	for _, pkg := range packages {
-		if installedSet[pkg] {
-			toUninstall = append(toUninstall, pkg)
-		}
-	}
-
-	if len(toUninstall) == 0 {
-		fmt.Println("No packages to uninstall (not installed on system)")
-		return nil
-	}
-
-	// Uninstall packages
-	if s.dryRun {
-		fmt.Printf("[dry-run] Would uninstall: %v\n", toUninstall)
-	} else {
-		if err := manager.Remove(toUninstall); err != nil {
-			return fmt.Errorf("error removing packages: %w", err)
-		}
-
-		// Update lockfile
-		lockfile := NewStateManager(s.configPath)
-		if err := lockfile.Load(); err != nil && s.verbose {
-			fmt.Printf("Note: could not load lockfile: %v\n", err)
-		}
-		for _, pkg := range toUninstall {
-			lockfile.RemovePackage(pkg)
-		}
-		if err := lockfile.Save(); err != nil {
-			fmt.Printf("Warning: failed to update lockfile: %v\n", err)
-		}
-	}
-
-	return nil
-}
-
-// Update upgrades all managed packages to their latest versions
+// Update upgrades all managed packages to their latest versions.
 func (s *Settle) Update() error {
 	hasApt := s.config.Apt != nil
 	hasGit := len(s.config.Git) > 0
+	hasGo := len(s.config.Go) > 0
 
 	if hasApt {
 		distro := DetectDistro()
@@ -326,7 +93,6 @@ func (s *Settle) Update() error {
 
 		manager := NewDebianManager(s.verbose)
 
-		// Collect all packages from config
 		var allPackages []string
 		allPackages = append(allPackages, s.config.Apt.Packages...)
 		for _, pkg := range s.config.Apt.PostHooks {
@@ -340,31 +106,11 @@ func (s *Settle) Update() error {
 				fmt.Println("[dry-run] Would run: apt-get update")
 				fmt.Printf("[dry-run] Would upgrade: %v\n", allPackages)
 			} else {
-				// Refresh package lists
 				if err := manager.RefreshPackageLists(); err != nil {
 					return fmt.Errorf("failed to update package lists: %w", err)
 				}
-
-				// Upgrade managed packages
 				if err := manager.Upgrade(allPackages); err != nil {
 					return fmt.Errorf("failed to upgrade packages: %w", err)
-				}
-
-				// Update lockfile with new versions
-				lockfile := NewStateManager(s.configPath)
-				if err := lockfile.Load(); err != nil && s.verbose {
-					fmt.Printf("Note: could not load lockfile: %v\n", err)
-				}
-
-				for _, pkg := range allPackages {
-					version, err := GetInstalledVersion(pkg)
-					if err == nil {
-						lockfile.SetPackageVersion(pkg, version, "apt")
-					}
-				}
-
-				if err := lockfile.Save(); err != nil {
-					fmt.Printf("Warning: failed to update lockfile: %v\n", err)
 				}
 			}
 		}
@@ -376,7 +122,6 @@ func (s *Settle) Update() error {
 		}
 	}
 
-	hasGo := len(s.config.Go) > 0
 	if hasGo {
 		if err := s.updateGo(); err != nil {
 			return fmt.Errorf("error updating go packages: %w", err)
@@ -392,39 +137,32 @@ func (s *Settle) Update() error {
 	return nil
 }
 
-// syncState updates the state file with current package versions
-func (s *Settle) syncState() error {
-	stateMgr := NewStateManager(s.configPath)
-
-	if err := stateMgr.Load(); err != nil {
-		return err
-	}
-
-	// Collect all packages
-	var allPackages []string
+// List shows the status of all packages and dotfiles.
+func (s *Settle) List() error {
 	if s.config.Apt != nil {
-		allPackages = append(allPackages, s.config.Apt.Packages...)
-		for _, pkg := range s.config.Apt.PostHooks {
-			allPackages = append(allPackages, pkg.Name)
+		if err := s.listApt(); err != nil {
+			return err
 		}
 	}
 
-	if err := stateMgr.SyncPackageVersions(allPackages); err != nil {
-		return err
+	if s.config.Dotfiles != nil {
+		if err := s.listDotfiles(); err != nil {
+			return err
+		}
 	}
 
-	if err := stateMgr.Save(); err != nil {
-		return err
+	if len(s.config.Git) > 0 {
+		s.listGit()
 	}
 
-	if s.verbose {
-		fmt.Printf("State saved to %s\n", stateMgr.Path())
+	if len(s.config.Go) > 0 {
+		s.listGo()
 	}
 
 	return nil
 }
 
-// applyApt handles apt package installation
+// applyApt handles apt package installation.
 func (s *Settle) applyApt() error {
 	distro := DetectDistro()
 	if !distro.IsDebianBased() {
@@ -438,17 +176,8 @@ func (s *Settle) applyApt() error {
 	manager := NewDebianManager(s.verbose)
 	aptCfg := s.config.Apt
 
-	// Load lockfile for version pinning
-	lockfile := NewStateManager(s.configPath)
-	if err := lockfile.Load(); err != nil && s.verbose {
-		fmt.Printf("Note: no lockfile found, will install latest versions\n")
-	}
-
-	// Collect all packages
 	allPackages := make([]string, 0, len(aptCfg.Packages)+len(aptCfg.PostHooks))
 	allPackages = append(allPackages, aptCfg.Packages...)
-
-	// Add packages with post-install hooks
 	for _, pkg := range aptCfg.PostHooks {
 		allPackages = append(allPackages, pkg.Name)
 	}
@@ -460,96 +189,31 @@ func (s *Settle) applyApt() error {
 
 	fmt.Printf("Checking %d apt packages...\n", len(allPackages))
 
-	// Check which packages are not installed
 	missingPackages, err := manager.CheckInstalled(allPackages)
 	if err != nil {
 		return fmt.Errorf("error checking packages: %w", err)
 	}
 
-	// Create a set of missing packages for quick lookup
 	missingSet := make(map[string]bool)
 	for _, pkg := range missingPackages {
 		missingSet[pkg] = true
 	}
 
-	// Check installed packages against lockfile versions
-	// If installed version is lower than lockfile, upgrade to lockfile version
-	var needUpgrade []string
-	needUpgradeSet := make(map[string]bool)
-	for _, pkg := range allPackages {
-		if missingSet[pkg] {
-			continue
-		}
-		lockVersion, ok := lockfile.GetPackageVersion(pkg)
-		if !ok {
-			continue
-		}
-		installedVersion, err := GetInstalledVersion(pkg)
-		if err != nil {
-			continue
-		}
-		if CompareVersions(installedVersion, lockVersion) < 0 {
-			needUpgrade = append(needUpgrade, pkg)
-			needUpgradeSet[pkg] = true
-		}
-	}
-
-	installedCount := len(allPackages) - len(missingPackages) - len(needUpgrade)
+	installedCount := len(allPackages) - len(missingPackages)
 	fmt.Printf("Already installed: %d\n", installedCount)
 	fmt.Printf("Need to install: %d\n", len(missingPackages))
-	if len(needUpgrade) > 0 {
-		fmt.Printf("Need to upgrade: %d\n", len(needUpgrade))
-	}
 
-	// Filter out unknown packages and build versions map
+	// Filter out unknown packages
 	var installable []string
 	var unknown []string
-	versions := make(map[string]string)
-
 	for _, pkg := range missingPackages {
 		if _, err := GetAvailableVersion(pkg); err != nil {
 			unknown = append(unknown, pkg)
 			continue
 		}
 		installable = append(installable, pkg)
-		if version, ok := lockfile.GetPackageVersion(pkg); ok {
-			versions[pkg] = version
-		}
 	}
 
-	// Add packages that need upgrading to lockfile version
-	var unavailableUpgrades []string
-	skippedUpgradeSet := make(map[string]bool)
-	for _, pkg := range needUpgrade {
-		lockVersion, ok := lockfile.GetPackageVersion(pkg)
-		if !ok {
-			continue
-		}
-		// Check if the pinned version exists in this machine's repos
-		available, err := GetAvailableVersion(pkg)
-		if err != nil {
-			unavailableUpgrades = append(unavailableUpgrades, fmt.Sprintf("%s=%s (not in repos)", pkg, lockVersion))
-			skippedUpgradeSet[pkg] = true
-			continue
-		}
-		// If the available version is still lower than lockfile, we can't upgrade to lockfile version
-		if CompareVersions(available, lockVersion) < 0 {
-			unavailableUpgrades = append(unavailableUpgrades, fmt.Sprintf("%s=%s (repo has %s)", pkg, lockVersion, available))
-			skippedUpgradeSet[pkg] = true
-			continue
-		}
-		installable = append(installable, pkg)
-		versions[pkg] = lockVersion
-	}
-
-	if len(unavailableUpgrades) > 0 {
-		fmt.Printf("\nSkipping %d upgrades (version not available):\n", len(unavailableUpgrades))
-		for _, msg := range unavailableUpgrades {
-			fmt.Printf("  - %s\n", msg)
-		}
-	}
-
-	// Warn about unknown packages
 	if len(unknown) > 0 {
 		fmt.Printf("\nSkipping %d unknown packages:\n", len(unknown))
 		for _, pkg := range unknown {
@@ -557,59 +221,37 @@ func (s *Settle) applyApt() error {
 		}
 	}
 
-	// Install missing packages (refresh package lists first)
 	if len(installable) > 0 {
-		if !s.dryRun {
-			if err := manager.RefreshPackageLists(); err != nil {
-				return fmt.Errorf("failed to update package lists: %w", err)
-			}
-		}
-
 		if s.dryRun {
 			fmt.Println("\n[dry-run] Would install:")
 			for _, pkg := range installable {
-				if version, ok := versions[pkg]; ok {
-					fmt.Printf("  - %s=%s (pinned)\n", pkg, version)
-				} else {
-					fmt.Printf("  - %s (latest)\n", pkg)
-				}
+				fmt.Printf("  - %s\n", pkg)
 			}
-			// Show post-install hooks that would run
 			for _, pkg := range aptCfg.PostHooks {
 				if pkg.PostInstall != "" && missingSet[pkg.Name] {
 					fmt.Printf("\n[dry-run] Would run post-install for %s\n", pkg.Name)
 				}
 			}
 		} else {
-			if err := manager.Install(installable, versions); err != nil {
+			if err := manager.RefreshPackageLists(); err != nil {
+				return fmt.Errorf("failed to update package lists: %w", err)
+			}
+			if err := manager.Install(installable); err != nil {
 				return fmt.Errorf("error installing packages: %w", err)
 			}
-
-			// Run post-install scripts ONLY for packages that were just installed
 			for _, pkg := range aptCfg.PostHooks {
 				if pkg.PostInstall != "" && missingSet[pkg.Name] {
-					if err := manager.RunPostInstall(pkg.Name, pkg.PostInstall); err != nil {
+					if err := manager.RunPostInstall(pkg.Name, pkg.PostInstall, pkg.Sudo); err != nil {
 						return fmt.Errorf("error running post-install for %s: %w", pkg.Name, err)
 					}
 				}
 			}
-
-			// Update lockfile with newly installed packages
-			for _, pkg := range installable {
-				version, err := GetInstalledVersion(pkg)
-				if err == nil {
-					lockfile.SetPackageVersion(pkg, version, "apt")
-				}
-			}
-			if err := lockfile.Save(); err != nil {
-				fmt.Printf("Warning: failed to update lockfile: %v\n", err)
-			}
 		}
-	} else if len(missingPackages) == 0 && len(unavailableUpgrades) == 0 {
+	} else if len(missingPackages) == 0 {
 		fmt.Println("All packages already installed!")
 	}
 
-	// Print results table (only show installable packages, not unknown)
+	// Print results table
 	statuses := make([]PackageStatus, 0, len(allPackages))
 	unknownSet := make(map[string]bool)
 	for _, pkg := range unknown {
@@ -617,82 +259,181 @@ func (s *Settle) applyApt() error {
 	}
 	for _, pkg := range allPackages {
 		if unknownSet[pkg] {
-			continue // skip unknown packages in table
+			continue
 		}
 		status := StatusSkipped
-		if missingSet[pkg] && !unknownSet[pkg] {
+		if missingSet[pkg] {
 			status = StatusInstalled
-		} else if needUpgradeSet[pkg] && !skippedUpgradeSet[pkg] {
-			status = StatusUpgraded
 		}
-		statuses = append(statuses, PackageStatus{
-			Name:   pkg,
-			Status: status,
-		})
+		statuses = append(statuses, PackageStatus{Name: pkg, Status: status})
 	}
 	PrintPackageTable(statuses)
 
-	// Check for apt packages to remove (in lockfile but not in config)
-	configSet := make(map[string]bool)
-	for _, pkg := range allPackages {
-		configSet[pkg] = true
+	return nil
+}
+
+// applyDotfiles handles dotfile symlinking.
+func (s *Settle) applyDotfiles() error {
+	cfg := s.config.Dotfiles
+
+	if len(cfg.Files) == 0 {
+		fmt.Println("No dotfiles configured")
+		return nil
 	}
 
-	var toRemove []string
-	for _, pkg := range lockfile.GetPackagesByManager("apt") {
-		if !configSet[pkg] {
-			toRemove = append(toRemove, pkg)
+	manager := NewDotfilesManager(cfg.SourceDir, s.verbose)
+
+	fmt.Printf("\nChecking %d dotfile links...\n", len(cfg.Files))
+
+	linked := 0
+	skipped := 0
+	var errors []string
+
+	for _, link := range cfg.Files {
+		created, err := manager.Apply(link, s.dryRun)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", link.Dest, err))
+			continue
+		}
+
+		if created {
+			linked++
+			if s.dryRun {
+				fmt.Printf("[dry-run] Would link: %s -> %s\n", link.Dest, link.Src)
+			} else if s.verbose {
+				fmt.Printf("Linked: %s -> %s\n", link.Dest, link.Src)
+			}
+		} else {
+			skipped++
 		}
 	}
 
-	if len(toRemove) > 0 {
-		if s.dryRun {
-			fmt.Println("\n[dry-run] Would remove (not in config):")
-			for _, pkg := range toRemove {
-				fmt.Printf("  - %s\n", pkg)
-			}
-		} else {
-			fmt.Printf("\nRemoving %d packages not in config...\n", len(toRemove))
-			if err := manager.Remove(toRemove); err != nil {
-				return fmt.Errorf("error removing packages: %w", err)
-			}
-			// Remove from lockfile
-			for _, pkg := range toRemove {
-				lockfile.RemovePackage(pkg)
-			}
-			if err := lockfile.Save(); err != nil {
-				fmt.Printf("Warning: failed to update lockfile: %v\n", err)
-			}
+	if s.dryRun {
+		fmt.Printf("\n[dry-run] Would create %d links, %d already correct\n", linked, skipped)
+	} else {
+		fmt.Printf("Created %d links, %d already correct\n", linked, skipped)
+	}
+
+	if len(errors) > 0 {
+		fmt.Println("\nErrors:")
+		for _, e := range errors {
+			fmt.Printf("  - %s\n", e)
 		}
 	}
 
 	return nil
 }
 
-// List shows the status of all packages and dotfiles
-func (s *Settle) List() error {
-	// List apt packages
-	if s.config.Apt != nil {
-		if err := s.listApt(); err != nil {
-			return err
+// applyGit clones missing git repos.
+func (s *Settle) applyGit() error {
+	fmt.Printf("\nChecking %d git repos...\n", len(s.config.Git))
+
+	var statuses []PackageStatus
+	for _, repo := range s.config.Git {
+		dest := expandPath(repo.Dest)
+		gitDir := filepath.Join(dest, ".git")
+
+		info, err := os.Stat(dest)
+		if err == nil {
+			if info.IsDir() {
+				if _, err := os.Stat(gitDir); err == nil {
+					statuses = append(statuses, PackageStatus{Name: repo.Dest, Status: StatusSkipped})
+					continue
+				}
+				return fmt.Errorf("destination %s exists but is not a git repository", dest)
+			}
+			return fmt.Errorf("destination %s exists but is not a directory", dest)
+		}
+
+		if s.dryRun {
+			fmt.Printf("[dry-run] Would clone: %s -> %s\n", repo.URL, repo.Dest)
+			statuses = append(statuses, PackageStatus{Name: repo.Dest, Status: StatusInstalled})
+			continue
+		}
+
+		if err := GitClone(repo.URL, dest, s.verbose); err != nil {
+			return fmt.Errorf("failed to clone %s: %w", repo.URL, err)
+		}
+		statuses = append(statuses, PackageStatus{Name: repo.Dest, Status: StatusInstalled})
+	}
+
+	PrintPackageTable(statuses)
+	return nil
+}
+
+// applyGo installs missing Go packages via `go install`.
+func (s *Settle) applyGo() error {
+	binDir, err := GoBinPath()
+	if err != nil {
+		return fmt.Errorf("cannot determine Go bin path: %w", err)
+	}
+
+	fmt.Printf("\nChecking %d go packages...\n", len(s.config.Go))
+
+	var statuses []PackageStatus
+	for _, pkg := range s.config.Go {
+		binName := GoPackageBinaryName(pkg.Path)
+
+		if IsGoPackageInstalled(binDir, binName) {
+			statuses = append(statuses, PackageStatus{Name: binName, Status: StatusSkipped})
+			continue
+		}
+
+		if s.dryRun {
+			fmt.Printf("[dry-run] Would install: go install %s@%s\n", pkg.Path, pkg.Version)
+			statuses = append(statuses, PackageStatus{Name: binName, Status: StatusInstalled})
+			continue
+		}
+
+		if err := GoInstall(pkg.Path, pkg.Version, s.verbose); err != nil {
+			return fmt.Errorf("failed to install %s: %w", pkg.Path, err)
+		}
+		statuses = append(statuses, PackageStatus{Name: binName, Status: StatusInstalled})
+	}
+
+	PrintPackageTable(statuses)
+	return nil
+}
+
+// updateGit pulls latest changes for all cloned git repos.
+func (s *Settle) updateGit() error {
+	fmt.Printf("\nUpdating %d git repos...\n", len(s.config.Git))
+
+	for _, repo := range s.config.Git {
+		dest := expandPath(repo.Dest)
+		gitDir := filepath.Join(dest, ".git")
+
+		if _, err := os.Stat(gitDir); os.IsNotExist(err) {
+			fmt.Printf("Warning: %s not cloned, run settle apply first\n", repo.Dest)
+			continue
+		}
+
+		if s.dryRun {
+			fmt.Printf("[dry-run] Would pull: %s\n", repo.Dest)
+			continue
+		}
+
+		if err := GitPullRepo(dest, s.verbose); err != nil {
+			return fmt.Errorf("failed to pull %s: %w", repo.Dest, err)
 		}
 	}
 
-	// List Dotfiles
-	if s.config.Dotfiles != nil {
-		if err := s.listDotfiles(); err != nil {
-			return err
+	return nil
+}
+
+// updateGo reinstalls all Go packages at their configured versions.
+func (s *Settle) updateGo() error {
+	fmt.Printf("\nUpdating %d go packages...\n", len(s.config.Go))
+
+	for _, pkg := range s.config.Go {
+		if s.dryRun {
+			fmt.Printf("[dry-run] Would install: go install %s@%s\n", pkg.Path, pkg.Version)
+			continue
 		}
-	}
 
-	// List Git repos
-	if len(s.config.Git) > 0 {
-		s.listGit()
-	}
-
-	// List Go packages
-	if len(s.config.Go) > 0 {
-		s.listGo()
+		if err := GoInstall(pkg.Path, pkg.Version, s.verbose); err != nil {
+			return fmt.Errorf("failed to update %s: %w", pkg.Path, err)
+		}
 	}
 
 	return nil
@@ -707,20 +448,11 @@ type packageInfo struct {
 	notFound  bool
 }
 
-// listApt lists all apt packages and their status
+// listApt lists all apt packages and their status.
 func (s *Settle) listApt() error {
 	manager := NewDebianManager(s.verbose)
 	cfg := s.config.Apt
 
-	// Load state file for version comparison
-	stateMgr := NewStateManager(s.configPath)
-	if err := stateMgr.Load(); err != nil {
-		if s.verbose {
-			fmt.Printf("Warning: could not load state: %v\n", err)
-		}
-	}
-
-	// Collect all packages
 	allPackages := make([]string, 0, len(cfg.Packages)+len(cfg.PostHooks))
 	allPackages = append(allPackages, cfg.Packages...)
 	for _, pkg := range cfg.PostHooks {
@@ -731,7 +463,6 @@ func (s *Settle) listApt() error {
 		return nil
 	}
 
-	// Check which packages are installed (already concurrent)
 	missing, err := manager.CheckInstalled(allPackages)
 	if err != nil {
 		return err
@@ -749,12 +480,10 @@ func (s *Settle) listApt() error {
 	jobs := make(chan string, len(allPackages))
 	results := make(chan packageInfo, len(allPackages))
 
-	// Start workers
 	for range workers {
 		go func() {
 			for pkg := range jobs {
 				info := packageInfo{name: pkg, isMissing: missingSet[pkg]}
-
 				if info.isMissing {
 					_, err := GetAvailableVersion(pkg)
 					info.notFound = (err != nil)
@@ -762,26 +491,22 @@ func (s *Settle) listApt() error {
 					info.installed, _ = GetInstalledVersion(pkg)
 					info.available, _ = GetAvailableVersion(pkg)
 				}
-
 				results <- info
 			}
 		}()
 	}
 
-	// Send jobs
 	for _, pkg := range allPackages {
 		jobs <- pkg
 	}
 	close(jobs)
 
-	// Collect results into a map
 	infoMap := make(map[string]packageInfo)
 	for i := 0; i < len(allPackages); i++ {
 		info := <-results
 		infoMap[info.name] = info
 	}
 
-	// Sort and print
 	sort.Strings(allPackages)
 
 	red := color.New(color.FgRed)
@@ -810,18 +535,11 @@ func (s *Settle) listApt() error {
 			continue
 		}
 
-		// Build status string
 		if info.available != "" && info.available != info.installed {
 			item.Status = fmt.Sprintf("%s (upgrade: %s)", info.installed, info.available)
 			item.Color = yellow
 		} else {
 			item.Status = info.installed
-		}
-
-		// Check if upgraded since last state sync
-		stateVersion, hasState := stateMgr.GetPackageVersion(pkg)
-		if hasState && stateVersion != info.installed {
-			item.Status = fmt.Sprintf("%s (lockfile: %s)", item.Status, stateVersion)
 		}
 
 		items = append(items, item)
@@ -831,7 +549,7 @@ func (s *Settle) listApt() error {
 	return nil
 }
 
-// listDotfiles lists all dotfiles and their status
+// listDotfiles lists all dotfiles and their status.
 func (s *Settle) listDotfiles() error {
 	cfg := s.config.Dotfiles
 
@@ -885,197 +603,7 @@ func (s *Settle) listDotfiles() error {
 	return nil
 }
 
-// applyDotfiles handles dotfile symlinking
-func (s *Settle) applyDotfiles() error {
-	cfg := s.config.Dotfiles
-
-	lockfile := NewStateManager(s.configPath)
-	if err := lockfile.Load(); err != nil && s.verbose {
-		fmt.Printf("Note: could not load lockfile: %v\n", err)
-	}
-
-	if len(cfg.Files) == 0 {
-		fmt.Println("No dotfiles configured")
-	} else {
-		manager := NewDotfilesManager(cfg.SourceDir, s.verbose)
-
-		fmt.Printf("\nChecking %d dotfile links...\n", len(cfg.Files))
-
-		linked := 0
-		skipped := 0
-		var errors []string
-
-		for _, link := range cfg.Files {
-			created, err := manager.Apply(link, s.dryRun)
-			if err != nil {
-				errors = append(errors, fmt.Sprintf("%s: %v", link.Dest, err))
-				continue
-			}
-
-			if created {
-				linked++
-				if s.dryRun {
-					fmt.Printf("[dry-run] Would link: %s -> %s\n", link.Dest, link.Src)
-				} else if s.verbose {
-					fmt.Printf("Linked: %s -> %s\n", link.Dest, link.Src)
-				}
-			} else {
-				skipped++
-			}
-
-			// Track in lockfile
-			if !s.dryRun {
-				src := filepath.Join(manager.sourceDir, link.Src)
-				mode := link.Mode
-				if mode == "" {
-					mode = "link"
-				}
-				lockfile.SetDotfile(link.Dest, src, mode)
-			}
-		}
-
-		if s.dryRun {
-			fmt.Printf("\n[dry-run] Would create %d links, %d already correct\n", linked, skipped)
-		} else {
-			fmt.Printf("Created %d links, %d already correct\n", linked, skipped)
-		}
-
-		if len(errors) > 0 {
-			fmt.Println("\nErrors:")
-			for _, e := range errors {
-				fmt.Printf("  - %s\n", e)
-			}
-		}
-	}
-
-	// Clean up orphaned dotfiles (in lockfile but not in config)
-	configDests := make(map[string]bool)
-	for _, link := range cfg.Files {
-		configDests[link.Dest] = true
-	}
-
-	removed := 0
-	for dest, state := range lockfile.GetAllDotfiles() {
-		if configDests[dest] {
-			continue
-		}
-
-		expandedDest := expandPath(dest)
-
-		if s.dryRun {
-			fmt.Printf("[dry-run] Would clean up orphaned dotfile: %s\n", dest)
-			removed++
-			continue
-		}
-
-		if state.Mode == "link" {
-			// Replace symlink with a copy of the source file if source exists
-			if _, err := os.Stat(state.Source); err == nil {
-				// Remove symlink first, then copy (copyFile follows symlinks)
-				if err := os.Remove(expandedDest); err != nil && !os.IsNotExist(err) {
-					fmt.Printf("Warning: failed to remove symlink %s: %v\n", dest, err)
-				} else if err := copyFile(state.Source, expandedDest); err != nil {
-					fmt.Printf("Warning: failed to replace symlink %s with copy: %v\n", dest, err)
-				} else {
-					fmt.Printf("Replaced symlink with copy: %s\n", dest)
-				}
-			} else {
-				// Source gone — remove broken link
-				if err := os.Remove(expandedDest); err != nil && !os.IsNotExist(err) {
-					fmt.Printf("Warning: failed to remove orphaned link %s: %v\n", dest, err)
-				} else {
-					fmt.Printf("Removed orphaned link: %s\n", dest)
-				}
-			}
-		}
-		// Copy mode: leave the file in place (it's already a standalone copy)
-
-		lockfile.RemoveDotfile(dest)
-		removed++
-	}
-
-	if removed > 0 && !s.dryRun {
-		fmt.Printf("Cleaned up %d orphaned dotfiles\n", removed)
-	}
-
-	if !s.dryRun {
-		if err := lockfile.Save(); err != nil {
-			fmt.Printf("Warning: failed to update lockfile: %v\n", err)
-		}
-	}
-
-	return nil
-}
-
-// applyGit clones missing git repos
-func (s *Settle) applyGit() error {
-	fmt.Printf("\nChecking %d git repos...\n", len(s.config.Git))
-
-	var statuses []PackageStatus
-	for _, repo := range s.config.Git {
-		dest := expandPath(repo.Dest)
-		gitDir := filepath.Join(dest, ".git")
-
-		info, err := os.Stat(dest)
-		if err == nil {
-			// Destination exists
-			if info.IsDir() {
-				if _, err := os.Stat(gitDir); err == nil {
-					// Has .git — already cloned
-					statuses = append(statuses, PackageStatus{Name: repo.Dest, Status: StatusSkipped})
-					continue
-				}
-				// Directory exists but not a repo
-				return fmt.Errorf("destination %s exists but is not a git repository", dest)
-			}
-			// Exists but is a file
-			return fmt.Errorf("destination %s exists but is not a directory", dest)
-		}
-
-		// Destination doesn't exist — clone it
-		if s.dryRun {
-			fmt.Printf("[dry-run] Would clone: %s -> %s\n", repo.URL, repo.Dest)
-			statuses = append(statuses, PackageStatus{Name: repo.Dest, Status: StatusInstalled})
-			continue
-		}
-
-		if err := GitClone(repo.URL, dest, s.verbose); err != nil {
-			return fmt.Errorf("failed to clone %s: %w", repo.URL, err)
-		}
-		statuses = append(statuses, PackageStatus{Name: repo.Dest, Status: StatusInstalled})
-	}
-
-	PrintPackageTable(statuses)
-	return nil
-}
-
-// updateGit pulls latest changes for all cloned git repos
-func (s *Settle) updateGit() error {
-	fmt.Printf("\nUpdating %d git repos...\n", len(s.config.Git))
-
-	for _, repo := range s.config.Git {
-		dest := expandPath(repo.Dest)
-		gitDir := filepath.Join(dest, ".git")
-
-		if _, err := os.Stat(gitDir); os.IsNotExist(err) {
-			fmt.Printf("Warning: %s not cloned, run settle apply first\n", repo.Dest)
-			continue
-		}
-
-		if s.dryRun {
-			fmt.Printf("[dry-run] Would pull: %s\n", repo.Dest)
-			continue
-		}
-
-		if err := GitPullRepo(dest, s.verbose); err != nil {
-			return fmt.Errorf("failed to pull %s: %w", repo.Dest, err)
-		}
-	}
-
-	return nil
-}
-
-// listGit lists all git repos and their status
+// listGit lists all git repos and their status.
 func (s *Settle) listGit() {
 	red := color.New(color.FgRed)
 	green := color.New(color.FgGreen)
@@ -1112,143 +640,7 @@ func (s *Settle) listGit() {
 	PrintListTable("Git Repos", items)
 }
 
-// applyGo installs missing or outdated Go packages via `go install`
-func (s *Settle) applyGo() error {
-	binDir, err := GoBinPath()
-	if err != nil {
-		return fmt.Errorf("cannot determine Go bin path: %w", err)
-	}
-
-	lockfile := NewStateManager(s.configPath)
-	if err := lockfile.Load(); err != nil && s.verbose {
-		fmt.Printf("Note: could not load lockfile: %v\n", err)
-	}
-
-	fmt.Printf("\nChecking %d go packages...\n", len(s.config.Go))
-
-	var statuses []PackageStatus
-	for _, pkg := range s.config.Go {
-		binName := GoPackageBinaryName(pkg.Path)
-
-		if IsGoPackageInstalled(binDir, binName) {
-			// Binary exists — check if lockfile version matches config version
-			lockVersion, hasLock := lockfile.GetPackageVersion(binName)
-			if hasLock && lockVersion == pkg.Version {
-				statuses = append(statuses, PackageStatus{Name: binName, Status: StatusSkipped})
-				continue
-			}
-
-			// Version mismatch or not in lockfile — upgrade
-			if s.dryRun {
-				if hasLock {
-					fmt.Printf("[dry-run] Would upgrade: %s %s -> %s\n", binName, lockVersion, pkg.Version)
-				} else {
-					fmt.Printf("[dry-run] Would install: go install %s@%s (adopting existing binary)\n", pkg.Path, pkg.Version)
-				}
-				statuses = append(statuses, PackageStatus{Name: binName, Status: StatusUpgraded})
-				continue
-			}
-
-			if err := GoInstall(pkg.Path, pkg.Version, s.verbose); err != nil {
-				return fmt.Errorf("failed to upgrade %s: %w", pkg.Path, err)
-			}
-
-			lockfile.SetPackageVersion(binName, pkg.Version, "go")
-			statuses = append(statuses, PackageStatus{Name: binName, Status: StatusUpgraded})
-			continue
-		}
-
-		// Binary missing — install
-		if s.dryRun {
-			fmt.Printf("[dry-run] Would install: go install %s@%s\n", pkg.Path, pkg.Version)
-			statuses = append(statuses, PackageStatus{Name: binName, Status: StatusInstalled})
-			continue
-		}
-
-		if err := GoInstall(pkg.Path, pkg.Version, s.verbose); err != nil {
-			return fmt.Errorf("failed to install %s: %w", pkg.Path, err)
-		}
-
-		lockfile.SetPackageVersion(binName, pkg.Version, "go")
-		statuses = append(statuses, PackageStatus{Name: binName, Status: StatusInstalled})
-	}
-
-	PrintPackageTable(statuses)
-
-	// Clean up orphaned go binaries (in lockfile but not in config)
-	configSet := make(map[string]bool)
-	for _, pkg := range s.config.Go {
-		configSet[GoPackageBinaryName(pkg.Path)] = true
-	}
-
-	var toRemove []string
-	for _, name := range lockfile.GetPackagesByManager("go") {
-		if !configSet[name] {
-			toRemove = append(toRemove, name)
-		}
-	}
-
-	if len(toRemove) > 0 {
-		if s.dryRun {
-			fmt.Println("\n[dry-run] Would remove go binaries not in config:")
-			for _, name := range toRemove {
-				fmt.Printf("  - %s\n", name)
-			}
-		} else {
-			fmt.Printf("\nRemoving %d go binaries not in config...\n", len(toRemove))
-			for _, name := range toRemove {
-				binPath := filepath.Join(binDir, name)
-				if err := os.Remove(binPath); err != nil && !os.IsNotExist(err) {
-					fmt.Printf("Warning: failed to remove %s: %v\n", name, err)
-				}
-				lockfile.RemovePackage(name)
-			}
-		}
-	}
-
-	if !s.dryRun {
-		if err := lockfile.Save(); err != nil {
-			fmt.Printf("Warning: failed to update lockfile: %v\n", err)
-		}
-	}
-
-	return nil
-}
-
-// updateGo reinstalls all Go packages at their configured versions
-func (s *Settle) updateGo() error {
-	fmt.Printf("\nUpdating %d go packages...\n", len(s.config.Go))
-
-	lockfile := NewStateManager(s.configPath)
-	if err := lockfile.Load(); err != nil && s.verbose {
-		fmt.Printf("Note: could not load lockfile: %v\n", err)
-	}
-
-	for _, pkg := range s.config.Go {
-		binName := GoPackageBinaryName(pkg.Path)
-
-		if s.dryRun {
-			fmt.Printf("[dry-run] Would install: go install %s@%s\n", pkg.Path, pkg.Version)
-			continue
-		}
-
-		if err := GoInstall(pkg.Path, pkg.Version, s.verbose); err != nil {
-			return fmt.Errorf("failed to update %s: %w", pkg.Path, err)
-		}
-
-		lockfile.SetPackageVersion(binName, pkg.Version, "go")
-	}
-
-	if !s.dryRun {
-		if err := lockfile.Save(); err != nil {
-			fmt.Printf("Warning: failed to update lockfile: %v\n", err)
-		}
-	}
-
-	return nil
-}
-
-// listGo lists all Go packages and their installed status
+// listGo lists all Go packages and their installed status.
 func (s *Settle) listGo() {
 	binDir, err := GoBinPath()
 	if err != nil {
@@ -1256,14 +648,8 @@ func (s *Settle) listGo() {
 		return
 	}
 
-	lockfile := NewStateManager(s.configPath)
-	if err := lockfile.Load(); err != nil && s.verbose {
-		fmt.Printf("Warning: could not load lockfile: %v\n", err)
-	}
-
 	red := color.New(color.FgRed)
 	green := color.New(color.FgGreen)
-	yellow := color.New(color.FgYellow)
 
 	var items []ListItem
 	for _, pkg := range s.config.Go {
@@ -1272,17 +658,8 @@ func (s *Settle) listGo() {
 		item.Name = binName
 
 		if IsGoPackageInstalled(binDir, binName) {
-			lockVersion, hasLock := lockfile.GetPackageVersion(binName)
-			if hasLock && lockVersion != pkg.Version {
-				item.Status = fmt.Sprintf("%s (config: %s)", lockVersion, pkg.Version)
-				item.Color = yellow
-			} else if hasLock {
-				item.Status = lockVersion
-				item.Color = green
-			} else {
-				item.Status = "installed (not in lockfile)"
-				item.Color = yellow
-			}
+			item.Status = pkg.Version
+			item.Color = green
 		} else {
 			item.Status = "missing"
 			item.Color = red

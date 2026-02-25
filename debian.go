@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 // execCommand is a package-level variable for exec.Command, swappable in tests.
@@ -21,20 +22,13 @@ func NewDebianManager(verbose bool) *DebianManager {
 }
 
 // IsInstalled checks if a package is installed using dpkg-query
-// This also handles virtual/transitional packages correctly
 func (d *DebianManager) IsInstalled(packageName string) (bool, error) {
-	// Use dpkg-query with format to check install status
-	// This returns "install ok installed" for installed packages
 	cmd := execCommand("dpkg-query", "-W", "-f=${Status}", packageName)
 	output, err := cmd.Output()
 	if err != nil {
-		// Package not found or error
 		return false, nil
 	}
-
-	// Check if status contains "install ok installed"
-	status := string(output)
-	return status == "install ok installed", nil
+	return string(output) == "install ok installed", nil
 }
 
 type packageCheckResult struct {
@@ -42,41 +36,33 @@ type packageCheckResult struct {
 	isInstalled bool
 }
 
-// CheckInstalled concurrently checks which packages are not installed
-// Returns a list of package names that need to be installed
+// CheckInstalled concurrently checks which packages from the list are not installed.
+// Returns a list of package names that need to be installed.
 func (d *DebianManager) CheckInstalled(packages []string) ([]string, error) {
 	if len(packages) == 0 {
 		return nil, nil
 	}
 
-	// Use a worker pool to limit concurrent checks
 	const maxWorkers = 20
 	workers := min(len(packages), maxWorkers)
 
-	// Channels for communication
 	jobs := make(chan string, len(packages))
 	results := make(chan packageCheckResult, len(packages))
 
-	// Start workers
 	for range workers {
 		go func() {
 			for pkg := range jobs {
 				installed, _ := d.IsInstalled(pkg)
-				results <- packageCheckResult{
-					name:        pkg,
-					isInstalled: installed,
-				}
+				results <- packageCheckResult{name: pkg, isInstalled: installed}
 			}
 		}()
 	}
 
-	// Send jobs
 	for _, pkg := range packages {
 		jobs <- pkg
 	}
 	close(jobs)
 
-	// Collect results
 	missing := make([]string, 0)
 	for range packages {
 		result := <-results
@@ -88,24 +74,13 @@ func (d *DebianManager) CheckInstalled(packages []string) ([]string, error) {
 	return missing, nil
 }
 
-// Install installs a list of packages using apt-get
-// If versions map is provided, installs specific versions (package=version)
-func (d *DebianManager) Install(packages []string, versions map[string]string) error {
+// Install installs a list of packages using apt-get.
+func (d *DebianManager) Install(packages []string) error {
 	if len(packages) == 0 {
 		return nil
 	}
 
-	// Build package specs with versions where available
-	packageSpecs := make([]string, 0, len(packages))
-	for _, pkg := range packages {
-		if version, ok := versions[pkg]; ok && version != "" {
-			packageSpecs = append(packageSpecs, fmt.Sprintf("%s=%s", pkg, version))
-		} else {
-			packageSpecs = append(packageSpecs, pkg)
-		}
-	}
-
-	args := append([]string{"install", "-y"}, packageSpecs...)
+	args := append([]string{"install", "-y"}, packages...)
 	cmd := execCommand("sudo", append([]string{"apt-get"}, args...)...)
 
 	var stderr bytes.Buffer
@@ -186,47 +161,9 @@ func (d *DebianManager) Upgrade(packages []string) error {
 	return err
 }
 
-// Remove removes a list of packages using apt-get
-func (d *DebianManager) Remove(packages []string) error {
-	if len(packages) == 0 {
-		return nil
-	}
-
-	args := append([]string{"remove", "-y"}, packages...)
-	cmd := execCommand("sudo", append([]string{"apt-get"}, args...)...)
-
-	var stderr bytes.Buffer
-	if d.verbose {
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		fmt.Printf("Removing %d packages...\n", len(packages))
-	} else {
-		cmd.Stderr = &stderr
-		fmt.Printf("Removing %d packages... ", len(packages))
-	}
-
-	cmd.Stdin = os.Stdin
-	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
-
-	err := cmd.Run()
-
-	if !d.verbose {
-		if err != nil {
-			fmt.Println("failed")
-			if stderr.Len() > 0 {
-				fmt.Print(stderr.String())
-			}
-		} else {
-			fmt.Println("done")
-		}
-	}
-
-	return err
-}
-
-// RunPostInstall executes a post-install script for a package
-// Scripts run as the current user and should include 'sudo' where needed
-func (d *DebianManager) RunPostInstall(packageName, script string) error {
+// RunPostInstall executes a post-install script for a package.
+// If sudo is true, the script runs under sudo.
+func (d *DebianManager) RunPostInstall(packageName, script string, sudo bool) error {
 	if script == "" {
 		return nil
 	}
@@ -237,7 +174,12 @@ func (d *DebianManager) RunPostInstall(packageName, script string) error {
 		fmt.Printf("Running post-install for %s... ", packageName)
 	}
 
-	cmd := execCommand("bash", "-c", script)
+	var cmd *exec.Cmd
+	if sudo {
+		cmd = execCommand("sudo", "bash", "-c", script)
+	} else {
+		cmd = execCommand("bash", "-c", script)
+	}
 
 	if d.verbose {
 		cmd.Stdout = os.Stdout
@@ -257,4 +199,37 @@ func (d *DebianManager) RunPostInstall(packageName, script string) error {
 	}
 
 	return err
+}
+
+// GetInstalledVersion queries dpkg for the installed version of a package.
+// This is a function variable so it can be swapped in tests.
+var GetInstalledVersion = func(name string) (string, error) {
+	cmd := execCommand("dpkg-query", "-W", "-f=${Version}", name)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// GetAvailableVersion queries apt-cache for the candidate version of a package.
+// This is a function variable so it can be swapped in tests.
+var GetAvailableVersion = func(name string) (string, error) {
+	cmd := execCommand("apt-cache", "policy", name)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+
+	for line := range strings.SplitSeq(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if after, ok := strings.CutPrefix(line, "Candidate:"); ok {
+			version := strings.TrimSpace(after)
+			if version == "(none)" {
+				return "", fmt.Errorf("no candidate version")
+			}
+			return version, nil
+		}
+	}
+	return "", fmt.Errorf("candidate version not found")
 }

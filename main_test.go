@@ -24,8 +24,6 @@ func TestPrintUsage(t *testing.T) {
 	assert.Contains(t, out, "Usage: settle")
 	assert.Contains(t, out, "Commands:")
 	assert.Contains(t, out, "apply")
-	assert.Contains(t, out, "install")
-	assert.Contains(t, out, "remove")
 	assert.Contains(t, out, "update")
 	assert.Contains(t, out, "list")
 	assert.Contains(t, out, "version")

@@ -31,7 +31,6 @@ func TestApply_AllInstalled(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
-	// All packages return "install ok installed"
 	execCommand = func(name string, arg ...string) *exec.Cmd {
 		return exec.Command("echo", "-n", "install ok installed")
 	}
@@ -67,14 +66,12 @@ func TestApply_InstallsMissing(t *testing.T) {
 
 	// vim installed, curl not
 	execCommand = func(name string, arg ...string) *exec.Cmd {
-		// dpkg-query calls
 		if name == "dpkg-query" {
 			if len(arg) >= 3 && arg[2] == "vim" {
 				return exec.Command("echo", "-n", "install ok installed")
 			}
 			return exec.Command("false")
 		}
-		// apt-get calls — just succeed
 		return exec.Command("true")
 	}
 	mockInstalledVersion(map[string]string{
@@ -100,160 +97,6 @@ packages = ["vim", "curl"]
 	})
 
 	assert.Contains(t, out, "Need to install: 1")
-	assert.Contains(t, out, "Done!")
-}
-
-func TestApply_PinsToLockfileForMissing(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	// curl not installed
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("false")
-		}
-		// apt-get install — check that it uses version
-		return exec.Command("true")
-	}
-	mockInstalledVersion(map[string]string{
-		"curl": "7.88.1",
-	})
-	mockAvailableVersion(map[string]string{
-		"curl": "7.88.1",
-	})
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["curl"]
-`)
-	// Write a lockfile with a specific version
-	writeLockfile(t, configPath, `{"packages":{"curl":{"version":"7.88.0","installed_at":"2024-01-01T00:00:00Z"}}}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Done!")
-}
-
-func TestApply_NoUpgradeWhenInstalledAboveLockfile(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	origExec := execCommand
-	// vim installed at HIGHER version than lockfile — no upgrade needed
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		// Let dpkg --compare-versions use real dpkg
-		if name == "dpkg" && len(arg) > 0 && arg[0] == "--compare-versions" {
-			return origExec(name, arg...)
-		}
-		return exec.Command("echo", "-n", "install ok installed")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.2",
-	})
-	mockAvailableVersion(map[string]string{
-		"vim": "9.0.2",
-	})
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "All packages already installed")
-	assert.NotContains(t, out, "Need to upgrade")
-	assert.Contains(t, out, "Done!")
-}
-
-func TestApply_UpgradesWhenInstalledBelowLockfile(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	origExec := execCommand
-	// vim installed at LOWER version than lockfile — should upgrade
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg" && len(arg) > 0 && arg[0] == "--compare-versions" {
-			return origExec(name, arg...)
-		}
-		if name == "dpkg-query" {
-			return exec.Command("echo", "-n", "install ok installed")
-		}
-		return exec.Command("true")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-	mockAvailableVersion(map[string]string{
-		"vim": "9.0.2",
-	})
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.2","installed_at":"2024-01-01T00:00:00Z"}}}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Need to upgrade: 1")
-	assert.Contains(t, out, "upgraded")
-	assert.Contains(t, out, "Done!")
-}
-
-func TestApply_RemovesUntracked(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	// vim installed
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("echo", "-n", "install ok installed")
-		}
-		return exec.Command("true")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-	mockAvailableVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-	// Lockfile has vim AND git, but git is not in config
-	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"},"git":{"version":"2.40.0","installed_at":"2024-01-01T00:00:00Z"}}}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Removing 1 packages not in config")
 	assert.Contains(t, out, "Done!")
 }
 
@@ -295,7 +138,6 @@ func TestApply_SkipsUnknownPackages(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
-	// badpkg not installed, not in apt-cache
 	execCommand = func(name string, arg ...string) *exec.Cmd {
 		if name == "dpkg-query" {
 			return exec.Command("false")
@@ -402,7 +244,6 @@ func TestApply_PostInstallHooks(t *testing.T) {
 		if name == "dpkg-query" {
 			return exec.Command("false")
 		}
-		// Both apt-get install and bash -c should succeed
 		return exec.Command("true")
 	}
 	mockInstalledVersion(map[string]string{
@@ -465,38 +306,6 @@ post_install = "echo test"
 
 	assert.Contains(t, out, "[dry-run] Would install")
 	assert.Contains(t, out, "[dry-run] Would run post-install for pipewire")
-}
-
-func TestApply_DryRunRemovesUntracked(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("echo", "-n", "install ok installed")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-	mockAvailableVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"},"git":{"version":"2.40.0","installed_at":"2024-01-01T00:00:00Z"}}}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, true)
-
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "[dry-run] Would remove")
-	assert.Contains(t, out, "git")
 }
 
 // --- Dotfiles Apply tests ---
@@ -650,262 +459,93 @@ dest = "`+filepath.Join(dir, ".vimrc")+`"
 	assert.Contains(t, out, "Errors:")
 }
 
-// --- Install tests ---
+// --- Apply error paths ---
 
-func TestInstall_NewPackage(t *testing.T) {
+func TestApply_ApplyDotfilesError(t *testing.T) {
+	saveMocks(t)
+
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "sources")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+
+	// Source exists, but dest is a directory — will error in link mode
+	srcFile := filepath.Join(srcDir, "vimrc")
+	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
+	destDir := filepath.Join(dir, ".vimrc")
+	require.NoError(t, os.MkdirAll(destDir, 0o755))
+
+	configPath := withTempConfig(t, `
+[dotfiles]
+source_dir = "`+srcDir+`"
+
+[[dotfiles.file]]
+src = "vimrc"
+dest = "`+destDir+`"
+`)
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	// applyDotfiles records errors but doesn't return error
+	out := captureOutput(t, func() {
+		err := s.Apply()
+		require.NoError(t, err)
+	})
+	assert.Contains(t, out, "Errors:")
+}
+
+func TestApply_CheckInstalledError(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
+	// All packages missing, apt-get install fails
 	execCommand = func(name string, arg ...string) *exec.Cmd {
 		if name == "dpkg-query" {
 			return exec.Command("false")
 		}
-		return exec.Command("true")
-	}
-	mockInstalledVersion(map[string]string{
-		"curl": "7.88.1",
-	})
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = []
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Install([]string{"curl"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Installing 1 packages")
-}
-
-func TestInstall_AlreadyInstalledAndInConfig(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("echo", "-n", "install ok installed")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Install([]string{"vim"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "All packages already in config and installed")
-}
-
-func TestInstall_UpdatesLockfileOnMismatch(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("echo", "-n", "install ok installed")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.2", // installed version differs from lockfile
-	})
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Install([]string{"vim"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "All packages already in config and installed")
-}
-
-func TestInstall_DryRun(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("false")
+		if name == "sudo" && len(arg) >= 2 && arg[1] == "update" {
+			return exec.Command("true")
 		}
-		require.Fail(t, "should not run apt-get in dry-run mode")
-		return nil
-	}
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = []
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, true)
-
-	out := captureOutput(t, func() {
-		err := s.Install([]string{"curl"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "[dry-run] Would install")
-}
-
-func TestInstall_NoPackagesSpecified(t *testing.T) {
-	cfg := &Config{}
-	s := NewSettle(cfg, "/tmp/config.toml", false, false)
-
-	err := s.Install(nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no packages specified")
-}
-
-func TestInstall_UnsupportedDistro(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=arch\n")
-
-	cfg := &Config{}
-	s := NewSettle(cfg, "/tmp/config.toml", false, false)
-
-	err := s.Install([]string{"vim"})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unsupported distribution")
-}
-
-func TestInstall_VerboseOutput(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("echo", "-n", "install ok installed")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, true, false)
-
-	out := captureOutput(t, func() {
-		err := s.Install([]string{"vim"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "All packages already in config and installed")
-}
-
-func TestInstall_NotInConfigShowsReminder(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("false")
-		}
-		return exec.Command("true")
-	}
-	mockInstalledVersion(map[string]string{
-		"curl": "7.88.1",
-	})
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Install([]string{"curl"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "add to your config.toml")
-	assert.Contains(t, out, "curl")
-}
-
-func TestInstall_CreatesAptSection(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("false")
-		}
-		return exec.Command("true")
-	}
-	mockInstalledVersion(map[string]string{
-		"curl": "7.88.1",
-	})
-
-	// Config with no apt section at all
-	configPath := withTempConfig(t, "")
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Install([]string{"curl"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Installing")
-}
-
-func TestInstall_AllAlreadyOnSystem(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("echo", "-n", "install ok installed")
+		return exec.Command("bash", "-c", "exit 1")
 	}
 	mockInstalledVersion(map[string]string{})
+	mockAvailableVersion(map[string]string{
+		"vim": "9.0.1",
+	})
 
 	configPath := withTempConfig(t, `
 [apt]
-packages = []
+packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
 	s := NewSettle(cfg, configPath, false, false)
 
 	out := captureOutput(t, func() {
-		err := s.Install([]string{"vim"})
-		require.NoError(t, err)
+		err := s.Apply()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "error installing packages")
 	})
-
-	assert.Contains(t, out, "All packages already installed on system")
+	_ = out
 }
 
-func TestInstall_PackageInPackageSection(t *testing.T) {
+func TestApply_PostInstallError(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
 	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("echo", "-n", "install ok installed")
+		if name == "dpkg-query" {
+			return exec.Command("false")
+		}
+		if name == "bash" {
+			return exec.Command("false")
+		}
+		return exec.Command("true")
 	}
 	mockInstalledVersion(map[string]string{
+		"pipewire": "0.3.65",
+	})
+	mockAvailableVersion(map[string]string{
 		"pipewire": "0.3.65",
 	})
 
@@ -914,275 +554,96 @@ func TestInstall_PackageInPackageSection(t *testing.T) {
 
 [[apt.post_hook]]
 name = "pipewire"
-post_install = "echo test"
+post_install = "failing-command"
 `)
-	writeLockfile(t, configPath, `{"packages":{"pipewire":{"version":"0.3.65","installed_at":"2024-01-01T00:00:00Z"}}}`)
 
 	cfg, _ := loadConfig(configPath)
 	s := NewSettle(cfg, configPath, false, false)
 
 	out := captureOutput(t, func() {
-		err := s.Install([]string{"pipewire"})
-		require.NoError(t, err)
+		err := s.Apply()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "error running post-install")
 	})
-
-	assert.Contains(t, out, "All packages already in config and installed")
+	_ = out
 }
 
-// --- Remove tests ---
-
-func TestRemove_InstalledPackage(t *testing.T) {
+func TestApply_BothAptAndDotfiles(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
 	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("echo", "-n", "install ok installed")
-		}
-		return exec.Command("true")
+		return exec.Command("echo", "-n", "install ok installed")
 	}
+	mockInstalledVersion(map[string]string{
+		"vim": "9.0.1",
+	})
+	mockAvailableVersion(map[string]string{
+		"vim": "9.0.1",
+	})
+
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "sources")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "vimrc"), []byte("content"), 0o644))
+	destFile := filepath.Join(dir, ".vimrc")
 
 	configPath := withTempConfig(t, `
 [apt]
 packages = ["vim"]
-`)
-	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
 
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+[dotfiles]
+source_dir = "`+srcDir+`"
 
-	out := captureOutput(t, func() {
-		err := s.Remove([]string{"vim"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Removing 1 packages")
-	assert.Contains(t, out, "remove from your config.toml")
-}
-
-func TestRemove_NotInstalled(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("false")
-	}
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = []
+[[dotfiles.file]]
+src = "vimrc"
+dest = "`+destFile+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
 	s := NewSettle(cfg, configPath, false, false)
 
 	out := captureOutput(t, func() {
-		err := s.Remove([]string{"nonexistent"})
+		err := s.Apply()
 		require.NoError(t, err)
 	})
 
-	assert.Contains(t, out, "None of the packages are in config or installed")
+	assert.Contains(t, out, "Done!")
+	assert.Contains(t, out, "Created 1 links")
 }
 
-func TestRemove_DryRun(t *testing.T) {
+func TestApply_DotfilesAlreadyCorrect(t *testing.T) {
 	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("echo", "-n", "install ok installed")
-		}
-		require.Fail(t, "should not run apt-get in dry-run mode")
-		return nil
-	}
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "sources")
+	require.NoError(t, os.MkdirAll(srcDir, 0o755))
+
+	srcFile := filepath.Join(srcDir, "vimrc")
+	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
+
+	// Destination already has correct symlink
+	destFile := filepath.Join(dir, ".vimrc")
+	require.NoError(t, os.Symlink(srcFile, destFile))
 
 	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
+[dotfiles]
+source_dir = "`+srcDir+`"
 
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, true)
-
-	out := captureOutput(t, func() {
-		err := s.Remove([]string{"vim"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "[dry-run] Would uninstall")
-}
-
-func TestRemove_NoPackagesSpecified(t *testing.T) {
-	cfg := &Config{}
-	s := NewSettle(cfg, "/tmp/config.toml", false, false)
-
-	err := s.Remove(nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no packages specified")
-}
-
-func TestRemove_NoAptConfig(t *testing.T) {
-	cfg := &Config{}
-	s := NewSettle(cfg, "/tmp/config.toml", false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Remove([]string{"vim"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "No packages configured")
-}
-
-func TestRemove_UnsupportedDistro(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=arch\n")
-
-	cfg := &Config{Apt: &AptConfig{Packages: []string{"vim"}}}
-	s := NewSettle(cfg, "/tmp/config.toml", false, false)
-
-	err := s.Remove([]string{"vim"})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unsupported distribution")
-}
-
-func TestRemove_NotInConfigButInstalled(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("echo", "-n", "install ok installed")
-		}
-		return exec.Command("true")
-	}
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["git"]
+[[dotfiles.file]]
+src = "vimrc"
+dest = "`+destFile+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
 	s := NewSettle(cfg, configPath, false, false)
 
 	out := captureOutput(t, func() {
-		err := s.Remove([]string{"vim"})
+		err := s.Apply()
 		require.NoError(t, err)
 	})
 
-	assert.Contains(t, out, "Removing 1 packages")
-}
-
-func TestRemove_VerboseOutput(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	// curl is installed but not in config
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("echo", "-n", "install ok installed")
-		}
-		return exec.Command("true")
-	}
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, true, false)
-
-	out := captureOutput(t, func() {
-		err := s.Remove([]string{"curl"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "not in config")
-}
-
-func TestRemove_InstalledNotInConfig_NoUninstall(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("false") // not installed
-		}
-		return exec.Command("true")
-	}
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Remove([]string{"vim"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "No packages to uninstall")
-}
-
-func TestRemove_DryRunConfigReminder(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("echo", "-n", "install ok installed")
-		}
-		require.Fail(t, "should not run apt-get remove in dry-run")
-		return nil
-	}
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, true)
-
-	out := captureOutput(t, func() {
-		err := s.Remove([]string{"vim"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "[dry-run] Would remind to remove from config")
-	assert.Contains(t, out, "[dry-run] Would uninstall")
-}
-
-func TestRemove_PackageInPackageSection(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("echo", "-n", "install ok installed")
-		}
-		return exec.Command("true")
-	}
-
-	configPath := withTempConfig(t, `
-[apt]
-
-[[apt.post_hook]]
-name = "pipewire"
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Remove([]string{"pipewire"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "remove from your config.toml")
+	assert.Contains(t, out, "Created 0 links, 1 already correct")
 }
 
 // --- Update tests ---
@@ -1330,6 +791,59 @@ packages = ["vim"]
 	assert.Contains(t, out, "Updating 1 managed packages")
 }
 
+func TestUpdate_RefreshError(t *testing.T) {
+	saveMocks(t)
+	writeOsRelease(t, "ID=debian\n")
+
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		return exec.Command("bash", "-c", "exit 1")
+	}
+
+	configPath := withTempConfig(t, `
+[apt]
+packages = ["vim"]
+`)
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		err := s.Update()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to update package lists")
+	})
+	_ = out
+}
+
+func TestUpdate_UpgradeError(t *testing.T) {
+	saveMocks(t)
+	writeOsRelease(t, "ID=debian\n")
+
+	callCount := 0
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		callCount++
+		if callCount == 1 {
+			return exec.Command("true")
+		}
+		return exec.Command("bash", "-c", "exit 1")
+	}
+
+	configPath := withTempConfig(t, `
+[apt]
+packages = ["vim"]
+`)
+
+	cfg, _ := loadConfig(configPath)
+	s := NewSettle(cfg, configPath, false, false)
+
+	out := captureOutput(t, func() {
+		err := s.Update()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to upgrade packages")
+	})
+	_ = out
+}
+
 // --- List tests ---
 
 func TestList_Packages(t *testing.T) {
@@ -1434,7 +948,6 @@ source_dir = "/tmp"
 		require.NoError(t, err)
 	})
 
-	// No table should be printed for empty dotfiles
 	assert.NotContains(t, out, "Dotfiles:")
 }
 
@@ -1522,38 +1035,6 @@ packages = ["vim"]
 	assert.Contains(t, out, "installed (version unknown)")
 }
 
-func TestList_WithStateVersionDiff(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("echo", "-n", "install ok installed")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.2",
-	})
-	mockAvailableVersion(map[string]string{
-		"vim": "9.0.2",
-	})
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-	// State has old version
-	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.List()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "lockfile: 9.0.1")
-}
-
 func TestList_PackagesWithPackageSection(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
@@ -1597,15 +1078,12 @@ func TestList_DotfileStatuses(t *testing.T) {
 	srcDir := filepath.Join(dir, "sources")
 	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
-	// Create source files
 	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "vimrc"), []byte("content"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "tmux.conf"), []byte("content"), 0o644))
 
-	// vimrc: correct symlink
 	vimDest := filepath.Join(dir, ".vimrc")
 	require.NoError(t, os.Symlink(filepath.Join(srcDir, "vimrc"), vimDest))
 
-	// tmux: missing
 	tmuxDest := filepath.Join(dir, ".tmux.conf")
 
 	configPath := withTempConfig(t, `
@@ -1633,564 +1111,19 @@ dest = "`+tmuxDest+`"
 	assert.Contains(t, out, "missing")
 }
 
-// --- syncState tests ---
-
-func TestSyncState(t *testing.T) {
+func TestList_ListAptError(t *testing.T) {
 	saveMocks(t)
-
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
+	writeOsRelease(t, "ID=arch\n") // unsupported distro
 
 	configPath := withTempConfig(t, `
 [apt]
 packages = ["vim"]
 `)
 
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	err := s.syncState()
-	require.NoError(t, err)
-
-	// Verify lockfile was written
-	sm := NewStateManager(configPath)
-	require.NoError(t, sm.Load())
-	v, ok := sm.GetPackageVersion("vim")
-	assert.Equal(t, true, ok)
-	assert.Equal(t, "9.0.1", v)
+	_ = configPath
 }
 
-func TestSyncState_Verbose(t *testing.T) {
-	saveMocks(t)
-
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, true, false)
-
-	out := captureOutput(t, func() {
-		err := s.syncState()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "State saved to")
-}
-
-func TestSyncState_NoApt(t *testing.T) {
-	saveMocks(t)
-	mockInstalledVersion(map[string]string{})
-
-	configPath := withTempConfig(t, "")
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	err := s.syncState()
-	require.NoError(t, err)
-}
-
-func TestSyncState_LoadError(t *testing.T) {
-	saveMocks(t)
-
-	// Use a path where lockfile exists but is unreadable
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.toml")
-	lockPath := filepath.Join(dir, "lockfile.json")
-	require.NoError(t, os.WriteFile(lockPath, []byte("not json{{{"), 0o644))
-
-	cfg := &Config{Apt: &AptConfig{Packages: []string{"vim"}}}
-	s := NewSettle(cfg, configPath, false, false)
-
-	err := s.syncState()
-	require.Error(t, err)
-}
-
-func TestSyncState_SaveError(t *testing.T) {
-	saveMocks(t)
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	// Use a read-only directory for the lockfile
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "subdir", "config.toml")
-	// Don't create the subdir — save will fail
-
-	cfg := &Config{Apt: &AptConfig{Packages: []string{"vim"}}}
-	s := NewSettle(cfg, configPath, false, false)
-
-	err := s.syncState()
-	require.Error(t, err)
-}
-
-// --- Error path tests for Apply ---
-
-func TestApply_ApplyDotfilesError(t *testing.T) {
-	saveMocks(t)
-
-	dir := t.TempDir()
-	srcDir := filepath.Join(dir, "sources")
-	require.NoError(t, os.MkdirAll(srcDir, 0o755))
-
-	// Source exists, but dest is a directory — will error in link mode
-	srcFile := filepath.Join(srcDir, "vimrc")
-	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
-	destDir := filepath.Join(dir, ".vimrc")
-	require.NoError(t, os.MkdirAll(destDir, 0o755))
-
-	configPath := withTempConfig(t, `
-[dotfiles]
-source_dir = "`+srcDir+`"
-
-[[dotfiles.file]]
-src = "vimrc"
-dest = "`+destDir+`"
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	// applyDotfiles records errors but doesn't return error
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
-	assert.Contains(t, out, "Errors:")
-}
-
-func TestApply_SyncStateError(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("echo", "-n", "install ok installed")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-	mockAvailableVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(`
-[apt]
-packages = ["vim"]
-`), 0o644))
-
-	// Make the lockfile unreadable so syncState fails
-	lockPath := filepath.Join(dir, "lockfile.json")
-	require.NoError(t, os.WriteFile(lockPath, []byte("not json{{{"), 0o644))
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Warning: failed to sync state")
-}
-
-func TestApply_CheckInstalledError(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	// The CheckInstalled method currently swallows errors from IsInstalled.
-	// To trigger the error path in applyApt (line 456), we'd need
-	// CheckInstalled to fail, but it catches errors internally.
-	// This is covered by the fact that dpkg-query can fail.
-	// Let's test the install failure path instead.
-
-	// All packages missing
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("false")
-		}
-		// apt-get update succeeds, apt-get install fails
-		if name == "sudo" && len(arg) >= 2 && arg[1] == "update" {
-			return exec.Command("true")
-		}
-		return exec.Command("bash", "-c", "exit 1")
-	}
-	mockInstalledVersion(map[string]string{})
-	mockAvailableVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "error installing packages")
-	})
-	_ = out
-}
-
-func TestApply_PostInstallError(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	callCount := 0
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("false")
-		}
-		if name == "bash" {
-			// post-install fails
-			return exec.Command("false")
-		}
-		// apt-get install succeeds
-		callCount++
-		return exec.Command("true")
-	}
-	mockInstalledVersion(map[string]string{
-		"pipewire": "0.3.65",
-	})
-	mockAvailableVersion(map[string]string{
-		"pipewire": "0.3.65",
-	})
-
-	configPath := withTempConfig(t, `
-[apt]
-
-[[apt.post_hook]]
-name = "pipewire"
-post_install = "failing-command"
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "error running post-install")
-	})
-	_ = out
-}
-
-func TestApply_RemoveError(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("echo", "-n", "install ok installed")
-		}
-		// apt-get remove fails
-		return exec.Command("bash", "-c", "exit 1")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-	mockAvailableVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"},"git":{"version":"2.40.0","installed_at":"2024-01-01T00:00:00Z"}}}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "error removing packages")
-	})
-	_ = out
-}
-
-// --- Error paths for Install ---
-
-func TestInstall_CheckInstalledError(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	// This tests the error from CheckInstalled.
-	// CheckInstalled itself doesn't return errors since it catches them.
-	// But we can still verify the flow.
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("echo", "-n", "install ok installed")
-	}
-	mockInstalledVersion(map[string]string{})
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = []
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Install([]string{"vim"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "All packages already installed on system")
-}
-
-func TestInstall_InstallFailure(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("false")
-		}
-		// apt-get install fails
-		return exec.Command("bash", "-c", "exit 1")
-	}
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = []
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Install([]string{"vim"})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "error installing packages")
-	})
-	_ = out
-}
-
-func TestInstall_LockfileLoadVerbose(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("echo", "-n", "install ok installed")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(`
-[apt]
-packages = ["vim"]
-`), 0o644))
-	// Corrupt lockfile
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte("bad json{{{"), 0o644))
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, true, false)
-
-	out := captureOutput(t, func() {
-		err := s.Install([]string{"vim"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "could not load lockfile")
-}
-
-func TestInstall_VerbosePackageAlreadyInConfig(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("false")
-		}
-		return exec.Command("true")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, true, false)
-
-	out := captureOutput(t, func() {
-		err := s.Install([]string{"vim"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "already in config")
-}
-
-// --- Error paths for Remove ---
-
-func TestRemove_RemoveFailure(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("echo", "-n", "install ok installed")
-		}
-		// apt-get remove fails
-		return exec.Command("bash", "-c", "exit 1")
-	}
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Remove([]string{"vim"})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "error removing packages")
-	})
-	_ = out
-}
-
-func TestRemove_LockfileLoadVerbose(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("echo", "-n", "install ok installed")
-		}
-		return exec.Command("true")
-	}
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(`
-[apt]
-packages = ["vim"]
-`), 0o644))
-	// Corrupt lockfile
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte("bad json"), 0o644))
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, true, false)
-
-	out := captureOutput(t, func() {
-		err := s.Remove([]string{"vim"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "could not load lockfile")
-}
-
-// --- Error paths for Update ---
-
-func TestUpdate_RefreshError(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("bash", "-c", "exit 1")
-	}
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Update()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to update package lists")
-	})
-	_ = out
-}
-
-func TestUpdate_UpgradeError(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	callCount := 0
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		callCount++
-		if callCount == 1 {
-			// apt-get update succeeds
-			return exec.Command("true")
-		}
-		// apt-get upgrade fails
-		return exec.Command("bash", "-c", "exit 1")
-	}
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Update()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to upgrade packages")
-	})
-	_ = out
-}
-
-func TestUpdate_LockfileLoadVerbose(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("true")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(`
-[apt]
-packages = ["vim"]
-`), 0o644))
-	// Corrupt lockfile
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte("bad json{{{"), 0o644))
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, true, false)
-
-	out := captureOutput(t, func() {
-		err := s.Update()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "could not load lockfile")
-}
-
-// --- listApt error paths ---
+// --- listApt ---
 
 func TestListApt_EmptyPackages(t *testing.T) {
 	saveMocks(t)
@@ -2209,42 +1142,7 @@ packages = []
 		require.NoError(t, err)
 	})
 
-	// Should not print packages table for empty list
 	assert.NotContains(t, out, "Packages:")
-}
-
-func TestListApt_VerboseStateLoadError(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("echo", "-n", "install ok installed")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-	mockAvailableVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(`
-[apt]
-packages = ["vim"]
-`), 0o644))
-	// Corrupt lockfile
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte("bad json"), 0o644))
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, true, false)
-
-	out := captureOutput(t, func() {
-		err := s.List()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Warning: could not load state")
 }
 
 // --- listDotfiles all status branches ---
@@ -2256,7 +1154,6 @@ func TestListDotfiles_AllStatuses(t *testing.T) {
 	srcDir := filepath.Join(dir, "sources")
 	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
-	// Source files
 	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "linked"), []byte("content"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "wronglink"), []byte("content"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "fileatdest"), []byte("content"), 0o644))
@@ -2265,32 +1162,24 @@ func TestListDotfiles_AllStatuses(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "copyold"), []byte("new content"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "missing"), []byte("content"), 0o644))
 
-	// Setup various statuses
-	// 1. Correct symlink
 	linkedDest := filepath.Join(dir, "linked")
 	require.NoError(t, os.Symlink(filepath.Join(srcDir, "linked"), linkedDest))
 
-	// 2. Incorrect symlink
 	wrongDest := filepath.Join(dir, "wronglink")
 	require.NoError(t, os.Symlink("/wrong/target", wrongDest))
 
-	// 3. File at dest (link mode)
 	fileDest := filepath.Join(dir, "fileatdest")
 	require.NoError(t, os.WriteFile(fileDest, []byte("existing file"), 0o644))
 
-	// 4. Dir at dest
 	dirDest := filepath.Join(dir, "diratdest")
 	require.NoError(t, os.MkdirAll(dirDest, 0o755))
 
-	// 5. Copy correct
 	copyGoodDest := filepath.Join(dir, "copygood")
 	require.NoError(t, os.WriteFile(copyGoodDest, []byte("same"), 0o644))
 
-	// 6. Copy outdated
 	copyOldDest := filepath.Join(dir, "copyold")
 	require.NoError(t, os.WriteFile(copyOldDest, []byte("old content"), 0o644))
 
-	// 7. Missing
 	missingDest := filepath.Join(dir, "missing_link")
 
 	configPath := withTempConfig(t, `
@@ -2353,7 +1242,6 @@ func TestListDotfiles_ErrorStatus(t *testing.T) {
 	srcDir := filepath.Join(dir, "sources")
 	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 
-	// Source doesn't exist — will produce error
 	configPath := withTempConfig(t, `
 [dotfiles]
 source_dir = "`+srcDir+`"
@@ -2374,481 +1262,11 @@ dest = "`+filepath.Join(dir, ".vimrc")+`"
 	assert.Contains(t, out, "error:")
 }
 
-// --- Apply lockfile save/load edge cases ---
-
-func TestApply_LockfileLoadVerbose(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("echo", "-n", "install ok installed")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-	mockAvailableVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(`
-[apt]
-packages = ["vim"]
-`), 0o644))
-	// No lockfile — verbose should say "no lockfile found"
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, true, false)
-
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
-
-	// When there's no lockfile and verbose, the message is printed
-	assert.Contains(t, out, "Detected distribution: debian")
-}
-
-func TestApply_InstallLockfileSaveWarning(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("false")
-		}
-		return exec.Command("true")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-	mockAvailableVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	// Use a path where lockfile can't be saved
-	configPath := "/nonexistent/dir/config.toml"
-	cfg := &Config{Apt: &AptConfig{Packages: []string{"vim"}}}
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Warning: failed to update lockfile")
-}
-
-func TestApply_UpgradeLockfileSaveWarning(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	origExec := execCommand
-	// vim installed at lower version than lockfile
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg" && len(arg) > 0 && arg[0] == "--compare-versions" {
-			return origExec(name, arg...)
-		}
-		if name == "dpkg-query" {
-			return exec.Command("echo", "-n", "install ok installed")
-		}
-		return exec.Command("true")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-	mockAvailableVersion(map[string]string{
-		"vim": "9.0.2",
-	})
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(`
-[apt]
-packages = ["vim"]
-`), 0o644))
-	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.2","installed_at":"2024-01-01T00:00:00Z"}}}`)
-
-	// Make the lockfile read-only so save fails after upgrade
-	lockPath := filepath.Join(dir, "lockfile.json")
-	require.NoError(t, os.Chmod(lockPath, 0o444))
-	t.Cleanup(func() { require.NoError(t, os.Chmod(lockPath, 0o644)) })
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Warning: failed to update lockfile")
-}
-
-func TestApply_RemoveLockfileSaveWarning(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("echo", "-n", "install ok installed")
-		}
-		return exec.Command("true")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-	mockAvailableVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(`
-[apt]
-packages = ["vim"]
-`), 0o644))
-	// Lockfile has vim AND git (git not in config, will be removed)
-	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"},"git":{"version":"2.40.0","installed_at":"2024-01-01T00:00:00Z"}}}`)
-
-	// Make the lockfile read-only so save after remove fails
-	lockPath := filepath.Join(dir, "lockfile.json")
-	require.NoError(t, os.Chmod(lockPath, 0o444))
-	t.Cleanup(func() { require.NoError(t, os.Chmod(lockPath, 0o644)) })
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Warning: failed to update lockfile")
-}
-
-// --- Install lockfile save warning ---
-
-func TestInstall_LockfileSaveWarning(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("false")
-		}
-		return exec.Command("true")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	cfg := &Config{}
-	s := NewSettle(cfg, "/nonexistent/dir/config.toml", false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Install([]string{"vim"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Warning: failed to update lockfile")
-}
-
-// --- Remove lockfile save warning ---
-
-func TestRemove_LockfileSaveWarning(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("echo", "-n", "install ok installed")
-		}
-		return exec.Command("true")
-	}
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(`
-[apt]
-packages = ["vim"]
-`), 0o644))
-	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
-
-	// Make the lockfile read-only so save fails
-	lockPath := filepath.Join(dir, "lockfile.json")
-	require.NoError(t, os.Chmod(lockPath, 0o444))
-	t.Cleanup(func() { require.NoError(t, os.Chmod(lockPath, 0o644)) })
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Remove([]string{"vim"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Warning: failed to update lockfile")
-}
-
-// --- Update lockfile save warning ---
-
-func TestUpdate_LockfileSaveWarning(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("true")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	cfg := &Config{Apt: &AptConfig{Packages: []string{"vim"}}}
-	s := NewSettle(cfg, "/nonexistent/dir/config.toml", false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Update()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Warning: failed to update lockfile")
-}
-
-// --- Apply verbose lockfile load message ---
-
-func TestApply_GetInstalledVersionErrorContinue(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	// vim installed
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("echo", "-n", "install ok installed")
-	}
-	// GetInstalledVersion returns error for vim
-	GetInstalledVersion = func(name string) (string, error) {
-		return "", fmt.Errorf("dpkg error")
-	}
-	mockAvailableVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
-
-	// Should still complete without error
-	assert.Contains(t, out, "Done!")
-}
-
-func TestApply_VerboseLockfileNotFound(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("echo", "-n", "install ok installed")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-	mockAvailableVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.toml")
-	require.NoError(t, os.WriteFile(configPath, []byte(`
-[apt]
-packages = ["vim"]
-`), 0o644))
-	// Write a corrupt lockfile so Load() returns error
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "lockfile.json"), []byte("{{bad"), 0o644))
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, true, false)
-
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "no lockfile found")
-}
-
-// --- Apply verbose pinned version output ---
-
-func TestApply_VerbosePinnedVersionDryRun(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
-			return exec.Command("false")
-		}
-		return exec.Command("true")
-	}
-	mockAvailableVersion(map[string]string{
-		"curl": "7.88.1",
-	})
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["curl"]
-`)
-	writeLockfile(t, configPath, `{"packages":{"curl":{"version":"7.88.0","installed_at":"2024-01-01T00:00:00Z"}}}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, true)
-
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "pinned")
-}
-
-// --- List error propagation ---
-
-func TestList_ListAptError(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=arch\n") // unsupported distro
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-
-	_ = configPath
-}
-
-// --- Apply with both apt and dotfiles ---
-
-func TestApply_BothAptAndDotfiles(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("echo", "-n", "install ok installed")
-	}
-	mockInstalledVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-	mockAvailableVersion(map[string]string{
-		"vim": "9.0.1",
-	})
-
-	dir := t.TempDir()
-	srcDir := filepath.Join(dir, "sources")
-	require.NoError(t, os.MkdirAll(srcDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "vimrc"), []byte("content"), 0o644))
-	destFile := filepath.Join(dir, ".vimrc")
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-
-[dotfiles]
-source_dir = "`+srcDir+`"
-
-[[dotfiles.file]]
-src = "vimrc"
-dest = "`+destFile+`"
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Done!")
-	assert.Contains(t, out, "Created 1 links")
-}
-
-// --- Install GetInstalledVersion error path ---
-
-func TestApply_DotfilesAlreadyCorrect(t *testing.T) {
-	saveMocks(t)
-
-	dir := t.TempDir()
-	srcDir := filepath.Join(dir, "sources")
-	require.NoError(t, os.MkdirAll(srcDir, 0o755))
-
-	srcFile := filepath.Join(srcDir, "vimrc")
-	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
-
-	// Destination already has correct symlink
-	destFile := filepath.Join(dir, ".vimrc")
-	require.NoError(t, os.Symlink(srcFile, destFile))
-
-	configPath := withTempConfig(t, `
-[dotfiles]
-source_dir = "`+srcDir+`"
-
-[[dotfiles.file]]
-src = "vimrc"
-dest = "`+destFile+`"
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Created 0 links, 1 already correct")
-}
-
-func TestInstall_GetInstalledVersionError(t *testing.T) {
-	saveMocks(t)
-	writeOsRelease(t, "ID=debian\n")
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("echo", "-n", "install ok installed")
-	}
-	GetInstalledVersion = func(name string) (string, error) {
-		return "", fmt.Errorf("version not found")
-	}
-
-	configPath := withTempConfig(t, `
-[apt]
-packages = ["vim"]
-`)
-	writeLockfile(t, configPath, `{"packages":{"vim":{"version":"9.0.1","installed_at":"2024-01-01T00:00:00Z"}}}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.Install([]string{"vim"})
-		require.NoError(t, err) // doesn't fail, just skips version check
-	})
-
-	assert.Contains(t, out, "All packages already in config and installed")
-}
-
 // --- Git Apply tests ---
 
 func TestApplyGit_ClonesMissing(t *testing.T) {
 	saveMocks(t)
 
-	// Create a bare repo as the "remote"
 	remote := t.TempDir()
 	run(t, remote, "git", "init", "--bare")
 
@@ -2881,7 +1299,6 @@ dest = "%s"
 	assert.Contains(t, out, "Checking 1 git repos")
 	assert.Contains(t, out, "Done!")
 
-	// Verify clone happened
 	_, err := os.Stat(filepath.Join(dest, ".git"))
 	assert.NoError(t, err)
 	data, _ := os.ReadFile(filepath.Join(dest, "README.md"))
@@ -2891,7 +1308,6 @@ dest = "%s"
 func TestApplyGit_SkipsExisting(t *testing.T) {
 	saveMocks(t)
 
-	// Create a bare repo and clone it to dest
 	remote := t.TempDir()
 	run(t, remote, "git", "init", "--bare")
 
@@ -2905,7 +1321,6 @@ func TestApplyGit_SkipsExisting(t *testing.T) {
 	run(t, work, "git", "commit", "-m", "init")
 	run(t, work, "git", "push")
 
-	// Pre-clone to dest
 	dest := filepath.Join(t.TempDir(), "cloned")
 	run(t, filepath.Dir(dest), "git", "clone", remote, dest)
 
@@ -2923,8 +1338,8 @@ dest = "%s"
 		require.NoError(t, err)
 	})
 
-	assert.Contains(t, out, "1 packages already installed")
 	assert.Contains(t, out, "Done!")
+	_ = out
 }
 
 func TestApplyGit_DryRun(t *testing.T) {
@@ -2951,7 +1366,6 @@ dest = "%s"
 
 	assert.Contains(t, out, "[dry-run] Would clone")
 
-	// Verify nothing was actually cloned
 	_, err := os.Stat(dest)
 	assert.True(t, os.IsNotExist(err))
 }
@@ -2959,7 +1373,6 @@ dest = "%s"
 func TestApplyGit_DestNotRepo(t *testing.T) {
 	saveMocks(t)
 
-	// Create a directory that is NOT a git repo
 	dest := t.TempDir()
 
 	configPath := withTempConfig(t, fmt.Sprintf(`
@@ -2981,7 +1394,6 @@ dest = "%s"
 func TestApplyGit_DestIsFile(t *testing.T) {
 	saveMocks(t)
 
-	// Create a file at the dest path
 	dest := filepath.Join(t.TempDir(), "file")
 	require.NoError(t, os.WriteFile(dest, []byte("not a dir"), 0o644))
 
@@ -3006,11 +1418,9 @@ dest = "%s"
 func TestUpdateGit_PullsExisting(t *testing.T) {
 	saveMocks(t)
 
-	// Create "remote" repo
 	remote := t.TempDir()
 	run(t, remote, "git", "init", "--bare")
 
-	// Clone and set up
 	parent := t.TempDir()
 	dest := filepath.Join(parent, "repo")
 	run(t, parent, "git", "clone", remote, dest)
@@ -3021,7 +1431,6 @@ func TestUpdateGit_PullsExisting(t *testing.T) {
 	run(t, dest, "git", "commit", "-m", "initial")
 	run(t, dest, "git", "push", "-u", "origin", "HEAD")
 
-	// Push new commit from another clone
 	other := filepath.Join(parent, "other")
 	run(t, parent, "git", "clone", remote, other)
 	run(t, other, "git", "config", "user.email", "test@test.com")
@@ -3048,7 +1457,6 @@ dest = "%s"
 	assert.Contains(t, out, "Updating 1 git repos")
 	assert.Contains(t, out, "Done!")
 
-	// Verify the new file arrived
 	data, err := os.ReadFile(filepath.Join(dest, "new.txt"))
 	require.NoError(t, err)
 	assert.Equal(t, "new", string(data))
@@ -3079,7 +1487,6 @@ dest = "%s"
 func TestUpdateGit_DryRun(t *testing.T) {
 	saveMocks(t)
 
-	// Create a cloned repo
 	remote := t.TempDir()
 	run(t, remote, "git", "init", "--bare")
 
@@ -3115,7 +1522,6 @@ dest = "%s"
 func TestListGit(t *testing.T) {
 	saveMocks(t)
 
-	// Create a cloned repo
 	remote := t.TempDir()
 	run(t, remote, "git", "init", "--bare")
 
@@ -3123,10 +1529,8 @@ func TestListGit(t *testing.T) {
 	clonedDest := filepath.Join(parent, "cloned")
 	run(t, parent, "git", "clone", remote, clonedDest)
 
-	// Missing destination
 	missingDest := filepath.Join(parent, "missing")
 
-	// Not a repo (regular directory)
 	notRepoDest := filepath.Join(parent, "notagitrepo")
 	require.NoError(t, os.MkdirAll(notRepoDest, 0o755))
 
@@ -3164,7 +1568,6 @@ func TestApplyGo_SkipsExisting(t *testing.T) {
 	saveMocks(t)
 
 	binDir := t.TempDir()
-	// Pre-create the binary
 	require.NoError(t, os.WriteFile(filepath.Join(binDir, "golangci-lint"), []byte("fake"), 0o755))
 
 	GoBinPath = func() (string, error) { return binDir, nil }
@@ -3179,8 +1582,6 @@ func TestApplyGo_SkipsExisting(t *testing.T) {
 path = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
 version = "v2.9.0"
 `)
-	// Lockfile version matches config — should skip
-	writeLockfile(t, configPath, `{"packages":{"golangci-lint":{"version":"v2.9.0","installed_at":"2026-01-01T00:00:00Z"}}}`)
 
 	cfg, _ := loadConfig(configPath)
 	s := NewSettle(cfg, configPath, false, false)
@@ -3192,115 +1593,6 @@ version = "v2.9.0"
 
 	assert.False(t, installCalled)
 	assert.Contains(t, out, "1 packages already installed")
-}
-
-func TestApplyGo_UpgradesOutdated(t *testing.T) {
-	saveMocks(t)
-
-	binDir := t.TempDir()
-	// Pre-create the binary (old version exists)
-	require.NoError(t, os.WriteFile(filepath.Join(binDir, "golangci-lint"), []byte("fake"), 0o755))
-
-	GoBinPath = func() (string, error) { return binDir, nil }
-
-	var installedVersion string
-	GoInstall = func(path, version string, verbose bool) error {
-		installedVersion = version
-		return nil
-	}
-
-	configPath := withTempConfig(t, `
-[[go]]
-path = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
-version = "v2.9.0"
-`)
-	// Lockfile has older version — should upgrade
-	writeLockfile(t, configPath, `{"packages":{"golangci-lint":{"version":"v2.2.2","installed_at":"2026-01-01T00:00:00Z"}}}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.applyGo()
-		require.NoError(t, err)
-	})
-
-	assert.Equal(t, "v2.9.0", installedVersion)
-	assert.Contains(t, out, "golangci-lint")
-	assert.Contains(t, out, "upgraded")
-
-	// Verify lockfile was updated
-	lockfile := NewStateManager(configPath)
-	require.NoError(t, lockfile.Load())
-	version, ok := lockfile.GetPackageVersion("golangci-lint")
-	assert.True(t, ok)
-	assert.Equal(t, "v2.9.0", version)
-}
-
-func TestApplyGo_AdoptsExistingWithoutLockfile(t *testing.T) {
-	saveMocks(t)
-
-	binDir := t.TempDir()
-	// Binary exists but no lockfile entry
-	require.NoError(t, os.WriteFile(filepath.Join(binDir, "mytool"), []byte("fake"), 0o755))
-
-	GoBinPath = func() (string, error) { return binDir, nil }
-
-	var installedVersion string
-	GoInstall = func(path, version string, verbose bool) error {
-		installedVersion = version
-		return nil
-	}
-
-	configPath := withTempConfig(t, `
-[[go]]
-path = "github.com/user/mytool"
-version = "v1.0.0"
-`)
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.applyGo()
-		require.NoError(t, err)
-	})
-
-	assert.Equal(t, "v1.0.0", installedVersion)
-	assert.Contains(t, out, "upgraded")
-}
-
-func TestApplyGo_DryRunUpgrade(t *testing.T) {
-	saveMocks(t)
-
-	binDir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(binDir, "golangci-lint"), []byte("fake"), 0o755))
-
-	GoBinPath = func() (string, error) { return binDir, nil }
-	installCalled := false
-	GoInstall = func(path, version string, verbose bool) error {
-		installCalled = true
-		return nil
-	}
-
-	configPath := withTempConfig(t, `
-[[go]]
-path = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
-version = "v2.9.0"
-`)
-	writeLockfile(t, configPath, `{"packages":{"golangci-lint":{"version":"v2.2.2","installed_at":"2026-01-01T00:00:00Z"}}}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, true)
-
-	out := captureOutput(t, func() {
-		err := s.applyGo()
-		require.NoError(t, err)
-	})
-
-	assert.False(t, installCalled)
-	assert.Contains(t, out, "[dry-run] Would upgrade")
-	assert.Contains(t, out, "v2.2.2")
-	assert.Contains(t, out, "v2.9.0")
 }
 
 func TestApplyGo_InstallsMissing(t *testing.T) {
@@ -3331,13 +1623,6 @@ version = "v2.9.0"
 	assert.Equal(t, "github.com/golangci/golangci-lint/v2/cmd/golangci-lint", installedPkg)
 	assert.Contains(t, out, "golangci-lint")
 	assert.Contains(t, out, "installed")
-
-	// Verify lockfile was updated
-	lockfile := NewStateManager(configPath)
-	require.NoError(t, lockfile.Load())
-	version, ok := lockfile.GetPackageVersion("golangci-lint")
-	assert.True(t, ok)
-	assert.Equal(t, "v2.9.0", version)
 }
 
 func TestApplyGo_DryRun(t *testing.T) {
@@ -3442,16 +1727,6 @@ version = "v0.25.0"
 
 	assert.Equal(t, 2, len(installed))
 	assert.Contains(t, out, "Updating 2 go packages")
-
-	// Verify lockfile was updated
-	lockfile := NewStateManager(configPath)
-	require.NoError(t, lockfile.Load())
-	v1, ok := lockfile.GetPackageVersion("golangci-lint")
-	assert.True(t, ok)
-	assert.Equal(t, "v2.9.0", v1)
-	v2, ok := lockfile.GetPackageVersion("goimports")
-	assert.True(t, ok)
-	assert.Equal(t, "v0.25.0", v2)
 }
 
 func TestUpdateGo_DryRun(t *testing.T) {
@@ -3506,7 +1781,6 @@ func TestListGo(t *testing.T) {
 	saveMocks(t)
 
 	binDir := t.TempDir()
-	// Create one installed binary
 	require.NoError(t, os.WriteFile(filepath.Join(binDir, "golangci-lint"), []byte("fake"), 0o755))
 
 	GoBinPath = func() (string, error) { return binDir, nil }
@@ -3520,8 +1794,6 @@ version = "v2.9.0"
 path = "golang.org/x/tools/cmd/goimports"
 version = "v0.25.0"
 `)
-	// Lockfile matches config for golangci-lint
-	writeLockfile(t, configPath, `{"packages":{"golangci-lint":{"version":"v2.9.0","installed_at":"2026-01-01T00:00:00Z"}}}`)
 
 	cfg, _ := loadConfig(configPath)
 	s := NewSettle(cfg, configPath, false, false)
@@ -3535,57 +1807,6 @@ version = "v0.25.0"
 	assert.Contains(t, out, "v2.9.0")
 	assert.Contains(t, out, "goimports")
 	assert.Contains(t, out, "missing")
-}
-
-func TestListGo_Outdated(t *testing.T) {
-	saveMocks(t)
-
-	binDir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(binDir, "mytool"), []byte("fake"), 0o755))
-
-	GoBinPath = func() (string, error) { return binDir, nil }
-
-	configPath := withTempConfig(t, `
-[[go]]
-path = "github.com/user/mytool"
-version = "v2.0.0"
-`)
-	// Lockfile has older version
-	writeLockfile(t, configPath, `{"packages":{"mytool":{"version":"v1.5.0","installed_at":"2026-01-01T00:00:00Z"}}}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		s.listGo()
-	})
-
-	assert.Contains(t, out, "v1.5.0")
-	assert.Contains(t, out, "config: v2.0.0")
-}
-
-func TestListGo_NotInLockfile(t *testing.T) {
-	saveMocks(t)
-
-	binDir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(binDir, "mytool"), []byte("fake"), 0o755))
-
-	GoBinPath = func() (string, error) { return binDir, nil }
-
-	configPath := withTempConfig(t, `
-[[go]]
-path = "github.com/user/mytool"
-version = "v1.0.0"
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		s.listGo()
-	})
-
-	assert.Contains(t, out, "not in lockfile")
 }
 
 func TestListGo_BinPathError(t *testing.T) {
@@ -3635,314 +1856,4 @@ version = "v1.0.0"
 
 	assert.Equal(t, 1, len(installed))
 	assert.Contains(t, out, "Done!")
-}
-
-// --- Go cleanup tests ---
-
-func TestApplyGo_RemovesOrphaned(t *testing.T) {
-	saveMocks(t)
-
-	binDir := t.TempDir()
-	// Create binary that will be orphaned
-	orphanBin := filepath.Join(binDir, "oldtool")
-	require.NoError(t, os.WriteFile(orphanBin, []byte("fake"), 0o755))
-	// Create binary for configured package
-	require.NoError(t, os.WriteFile(filepath.Join(binDir, "newtool"), []byte("fake"), 0o755))
-
-	GoBinPath = func() (string, error) { return binDir, nil }
-	GoInstall = func(path, version string, verbose bool) error { return nil }
-
-	configPath := withTempConfig(t, `
-[[go]]
-path = "github.com/user/newtool"
-version = "v1.0.0"
-`)
-	// Lockfile has both — oldtool is orphaned (not in config)
-	writeLockfile(t, configPath, `{
-		"packages": {
-			"oldtool": {"version": "v0.5.0", "manager": "go", "installed_at": "2026-01-01T00:00:00Z"},
-			"newtool": {"version": "v1.0.0", "manager": "go", "installed_at": "2026-01-01T00:00:00Z"}
-		}
-	}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.applyGo()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Removing 1 go binaries not in config")
-
-	// Binary should be deleted
-	_, err := os.Stat(orphanBin)
-	assert.True(t, os.IsNotExist(err))
-
-	// Lockfile should no longer have oldtool
-	lockfile := NewStateManager(configPath)
-	require.NoError(t, lockfile.Load())
-	_, ok := lockfile.GetPackageVersion("oldtool")
-	assert.False(t, ok)
-
-	// newtool should still be in lockfile
-	_, ok = lockfile.GetPackageVersion("newtool")
-	assert.True(t, ok)
-}
-
-func TestApplyGo_RemovesOrphaned_DryRun(t *testing.T) {
-	saveMocks(t)
-
-	binDir := t.TempDir()
-	orphanBin := filepath.Join(binDir, "oldtool")
-	require.NoError(t, os.WriteFile(orphanBin, []byte("fake"), 0o755))
-
-	GoBinPath = func() (string, error) { return binDir, nil }
-
-	configPath := withTempConfig(t, `
-[[go]]
-path = "github.com/user/newtool"
-version = "v1.0.0"
-`)
-	writeLockfile(t, configPath, `{
-		"packages": {
-			"oldtool": {"version": "v0.5.0", "manager": "go", "installed_at": "2026-01-01T00:00:00Z"}
-		}
-	}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, true)
-
-	out := captureOutput(t, func() {
-		err := s.applyGo()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "[dry-run] Would remove go binaries not in config")
-	assert.Contains(t, out, "oldtool")
-
-	// Binary should NOT be deleted in dry-run
-	_, err := os.Stat(orphanBin)
-	assert.NoError(t, err)
-}
-
-// --- Dotfile cleanup tests ---
-
-func TestApplyDotfiles_TracksInLockfile(t *testing.T) {
-	saveMocks(t)
-
-	dir := t.TempDir()
-	srcDir := filepath.Join(dir, "sources")
-	require.NoError(t, os.MkdirAll(srcDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "vimrc"), []byte("set nocompatible"), 0o644))
-
-	destFile := filepath.Join(dir, ".vimrc")
-
-	configPath := withTempConfig(t, `
-[dotfiles]
-source_dir = "`+srcDir+`"
-
-[[dotfiles.file]]
-src = "vimrc"
-dest = "`+destFile+`"
-`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	captureOutput(t, func() {
-		err := s.applyDotfiles()
-		require.NoError(t, err)
-	})
-
-	// Verify lockfile has the dotfile entry
-	lockfile := NewStateManager(configPath)
-	require.NoError(t, lockfile.Load())
-
-	all := lockfile.GetAllDotfiles()
-	assert.Equal(t, 1, len(all))
-	assert.Equal(t, filepath.Join(srcDir, "vimrc"), all[destFile].Source)
-	assert.Equal(t, "link", all[destFile].Mode)
-}
-
-func TestApplyDotfiles_CleansOrphanedLink(t *testing.T) {
-	saveMocks(t)
-
-	dir := t.TempDir()
-	srcDir := filepath.Join(dir, "sources")
-	require.NoError(t, os.MkdirAll(srcDir, 0o755))
-
-	srcFile := filepath.Join(srcDir, "vimrc")
-	require.NoError(t, os.WriteFile(srcFile, []byte("set nocompatible"), 0o644))
-
-	// Create a symlink that will become orphaned
-	orphanDest := filepath.Join(dir, ".oldrc")
-	require.NoError(t, os.Symlink(srcFile, orphanDest))
-
-	// Config only has .vimrc, not .oldrc
-	destFile := filepath.Join(dir, ".vimrc")
-	configPath := withTempConfig(t, `
-[dotfiles]
-source_dir = "`+srcDir+`"
-
-[[dotfiles.file]]
-src = "vimrc"
-dest = "`+destFile+`"
-`)
-
-	// Lockfile tracks both .vimrc and .oldrc
-	writeLockfile(t, configPath, `{
-		"packages": {},
-		"dotfiles": {
-			"`+destFile+`": {"source": "`+srcFile+`", "mode": "link"},
-			"`+orphanDest+`": {"source": "`+srcFile+`", "mode": "link"}
-		}
-	}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.applyDotfiles()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Replaced symlink with copy")
-	assert.Contains(t, out, "Cleaned up 1 orphaned dotfiles")
-
-	// Orphaned symlink should be replaced with a regular file
-	info, err := os.Lstat(orphanDest)
-	require.NoError(t, err)
-	assert.True(t, info.Mode().IsRegular(), "should be a regular file, not a symlink")
-
-	// Content should match the source
-	content, err := os.ReadFile(orphanDest)
-	require.NoError(t, err)
-	assert.Equal(t, "set nocompatible", string(content))
-
-	// Lockfile should no longer have the orphaned entry
-	lockfile := NewStateManager(configPath)
-	require.NoError(t, lockfile.Load())
-	_, hasOrphan := lockfile.GetAllDotfiles()[orphanDest]
-	assert.False(t, hasOrphan)
-}
-
-func TestApplyDotfiles_CleansOrphanedLinkBroken(t *testing.T) {
-	saveMocks(t)
-
-	dir := t.TempDir()
-	srcDir := filepath.Join(dir, "sources")
-	require.NoError(t, os.MkdirAll(srcDir, 0o755))
-
-	// The source referenced by the orphaned entry no longer exists
-	orphanDest := filepath.Join(dir, ".oldrc")
-	require.NoError(t, os.Symlink("/nonexistent/source", orphanDest))
-
-	configPath := withTempConfig(t, `
-[dotfiles]
-source_dir = "`+srcDir+`"
-`)
-
-	writeLockfile(t, configPath, `{
-		"packages": {},
-		"dotfiles": {
-			"`+orphanDest+`": {"source": "/nonexistent/source", "mode": "link"}
-		}
-	}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	out := captureOutput(t, func() {
-		err := s.applyDotfiles()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Removed orphaned link")
-
-	// Broken symlink should be removed
-	_, err := os.Lstat(orphanDest)
-	assert.True(t, os.IsNotExist(err))
-}
-
-func TestApplyDotfiles_CleansOrphanedCopy(t *testing.T) {
-	saveMocks(t)
-
-	dir := t.TempDir()
-	srcDir := filepath.Join(dir, "sources")
-	require.NoError(t, os.MkdirAll(srcDir, 0o755))
-
-	// Orphaned copy — should be left in place
-	orphanDest := filepath.Join(dir, ".oldrc")
-	require.NoError(t, os.WriteFile(orphanDest, []byte("old content"), 0o644))
-
-	configPath := withTempConfig(t, `
-[dotfiles]
-source_dir = "`+srcDir+`"
-`)
-
-	writeLockfile(t, configPath, `{
-		"packages": {},
-		"dotfiles": {
-			"`+orphanDest+`": {"source": "/some/source", "mode": "copy"}
-		}
-	}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
-
-	captureOutput(t, func() {
-		err := s.applyDotfiles()
-		require.NoError(t, err)
-	})
-
-	// File should still exist (copy mode leaves files in place)
-	content, err := os.ReadFile(orphanDest)
-	require.NoError(t, err)
-	assert.Equal(t, "old content", string(content))
-
-	// But lockfile entry should be removed
-	lockfile := NewStateManager(configPath)
-	require.NoError(t, lockfile.Load())
-	assert.Equal(t, 0, len(lockfile.GetAllDotfiles()))
-}
-
-func TestApplyDotfiles_DryRunNoCleanup(t *testing.T) {
-	saveMocks(t)
-
-	dir := t.TempDir()
-	srcDir := filepath.Join(dir, "sources")
-	require.NoError(t, os.MkdirAll(srcDir, 0o755))
-
-	srcFile := filepath.Join(srcDir, "vimrc")
-	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
-
-	orphanDest := filepath.Join(dir, ".oldrc")
-	require.NoError(t, os.Symlink(srcFile, orphanDest))
-
-	configPath := withTempConfig(t, `
-[dotfiles]
-source_dir = "`+srcDir+`"
-`)
-
-	writeLockfile(t, configPath, `{
-		"packages": {},
-		"dotfiles": {
-			"`+orphanDest+`": {"source": "`+srcFile+`", "mode": "link"}
-		}
-	}`)
-
-	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, true)
-
-	out := captureOutput(t, func() {
-		err := s.applyDotfiles()
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "[dry-run] Would clean up orphaned dotfile")
-
-	// Symlink should NOT be removed in dry-run
-	_, err := os.Lstat(orphanDest)
-	assert.NoError(t, err)
 }

@@ -96,7 +96,7 @@ func TestInstall_Success(t *testing.T) {
 
 	d := NewDebianManager(false)
 	out := captureOutput(t, func() {
-		err := d.Install([]string{"vim", "curl"}, nil)
+		err := d.Install([]string{"vim", "curl"})
 		require.NoError(t, err)
 	})
 
@@ -111,33 +111,9 @@ func TestInstall_Success(t *testing.T) {
 	assert.Contains(t, args, "curl")
 }
 
-func TestInstall_WithVersions(t *testing.T) {
-	saveMocks(t)
-
-	var recorded []cmdCall
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		recorded = append(recorded, cmdCall{Name: name, Args: arg})
-		return exec.Command("true")
-	}
-
-	versions := map[string]string{
-		"vim": "9.0.1-1",
-	}
-
-	d := NewDebianManager(false)
-	captureOutput(t, func() {
-		err := d.Install([]string{"vim", "curl"}, versions)
-		require.NoError(t, err)
-	})
-
-	args := joinArgs(recorded[0].Args)
-	assert.Contains(t, args, "vim=9.0.1-1")
-	assert.Contains(t, args, "curl")
-}
-
 func TestInstall_Empty(t *testing.T) {
 	d := NewDebianManager(false)
-	err := d.Install(nil, nil)
+	err := d.Install(nil)
 	require.NoError(t, err)
 }
 
@@ -150,7 +126,7 @@ func TestInstall_Failure_ShowsStderr(t *testing.T) {
 
 	d := NewDebianManager(false)
 	out := captureOutput(t, func() {
-		err := d.Install([]string{"badpkg"}, nil)
+		err := d.Install([]string{"badpkg"})
 		require.Error(t, err)
 	})
 
@@ -166,7 +142,7 @@ func TestInstall_Verbose(t *testing.T) {
 
 	d := NewDebianManager(true)
 	out := captureOutput(t, func() {
-		err := d.Install([]string{"vim"}, nil)
+		err := d.Install([]string{"vim"})
 		require.NoError(t, err)
 	})
 
@@ -232,64 +208,6 @@ func TestUpgrade_Verbose(t *testing.T) {
 	assert.Contains(t, out, "Upgrading 1 packages...")
 }
 
-func TestRemove_Success(t *testing.T) {
-	saveMocks(t)
-
-	var recorded []cmdCall
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		recorded = append(recorded, cmdCall{Name: name, Args: arg})
-		return exec.Command("true")
-	}
-
-	d := NewDebianManager(false)
-	out := captureOutput(t, func() {
-		err := d.Remove([]string{"vim"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Removing 1 packages")
-	assert.Contains(t, out, "done")
-	args := joinArgs(recorded[0].Args)
-	assert.Contains(t, args, "remove")
-}
-
-func TestRemove_Empty(t *testing.T) {
-	d := NewDebianManager(false)
-	err := d.Remove(nil)
-	require.NoError(t, err)
-}
-
-func TestRemove_Failure_ShowsStderr(t *testing.T) {
-	saveMocks(t)
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("bash", "-c", "echo 'remove error' >&2; exit 1")
-	}
-
-	d := NewDebianManager(false)
-	out := captureOutput(t, func() {
-		err := d.Remove([]string{"vim"})
-		require.Error(t, err)
-	})
-
-	assert.Contains(t, out, "failed")
-}
-
-func TestRemove_Verbose(t *testing.T) {
-	saveMocks(t)
-
-	execCommand = func(name string, arg ...string) *exec.Cmd {
-		return exec.Command("true")
-	}
-
-	d := NewDebianManager(true)
-	out := captureOutput(t, func() {
-		err := d.Remove([]string{"vim"})
-		require.NoError(t, err)
-	})
-
-	assert.Contains(t, out, "Removing 1 packages...")
-}
 
 func TestRefreshPackageLists(t *testing.T) {
 	saveMocks(t)
@@ -324,7 +242,7 @@ func TestRunPostInstall(t *testing.T) {
 
 	d := NewDebianManager(false)
 	out := captureOutput(t, func() {
-		err := d.RunPostInstall("pipewire", "systemctl --user enable wireplumber")
+		err := d.RunPostInstall("pipewire", "systemctl --user enable wireplumber", false)
 		require.NoError(t, err)
 	})
 
@@ -337,7 +255,7 @@ func TestRunPostInstall(t *testing.T) {
 
 func TestRunPostInstall_Empty(t *testing.T) {
 	d := NewDebianManager(false)
-	err := d.RunPostInstall("vim", "")
+	err := d.RunPostInstall("vim", "", false)
 	require.NoError(t, err)
 }
 
@@ -350,7 +268,7 @@ func TestRunPostInstall_Failure(t *testing.T) {
 
 	d := NewDebianManager(false)
 	out := captureOutput(t, func() {
-		err := d.RunPostInstall("pipewire", "bad-command")
+		err := d.RunPostInstall("pipewire", "bad-command", false)
 		require.Error(t, err)
 	})
 
@@ -366,11 +284,31 @@ func TestRunPostInstall_Verbose(t *testing.T) {
 
 	d := NewDebianManager(true)
 	out := captureOutput(t, func() {
-		err := d.RunPostInstall("pipewire", "echo hi")
+		err := d.RunPostInstall("pipewire", "echo hi", false)
 		require.NoError(t, err)
 	})
 
 	assert.Contains(t, out, "Running post-install script for pipewire...")
+}
+
+func TestRunPostInstall_Sudo(t *testing.T) {
+	saveMocks(t)
+
+	var recorded []cmdCall
+	execCommand = func(name string, arg ...string) *exec.Cmd {
+		recorded = append(recorded, cmdCall{Name: name, Args: arg})
+		return exec.Command("true")
+	}
+
+	d := NewDebianManager(false)
+	captureOutput(t, func() {
+		err := d.RunPostInstall("mypkg", "some-system-command", true)
+		require.NoError(t, err)
+	})
+
+	require.Len(t, recorded, 1)
+	assert.Equal(t, "sudo", recorded[0].Name)
+	assert.Equal(t, []string{"bash", "-c", "some-system-command"}, recorded[0].Args)
 }
 
 // helper to join args into a single string for assertion

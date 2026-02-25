@@ -36,15 +36,13 @@ func printVersion() {
 }
 
 func printUsage() {
-	fmt.Fprintf(os.Stderr, `Usage: settle [flags] [command] [args]
+	fmt.Fprintf(os.Stderr, `Usage: settle [flags] [command]
 
 Commands:
-  apply              Apply configuration (default when no command given)
-  install <pkg>...   Install packages and track in lockfile
-  remove <pkg>...    Remove packages and update lockfile
-  update             Upgrade all managed packages to latest versions
-  list               Show status of all packages and dotfiles
-  version            Show version information
+  apply    Apply configuration (default when no command given)
+  update   Upgrade all managed packages to latest versions
+  list     Show status of all packages and dotfiles
+  version  Show version information
 
 Flags:
 `)
@@ -102,28 +100,10 @@ func main() {
 	args := flag.Args()
 	if len(args) > 0 {
 		switch args[0] {
+		case "apply":
+			// fall through to default Apply below
 		case "list":
 			if err := settle.List(); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "install":
-			if len(args) < 2 {
-				fmt.Fprintf(os.Stderr, "Usage: settle install <package> [package...]\n")
-				os.Exit(1)
-			}
-			if err := settle.Install(args[1:]); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "remove":
-			if len(args) < 2 {
-				fmt.Fprintf(os.Stderr, "Usage: settle remove <package> [package...]\n")
-				os.Exit(1)
-			}
-			if err := settle.Remove(args[1:]); err != nil {
 				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 				os.Exit(1)
 			}

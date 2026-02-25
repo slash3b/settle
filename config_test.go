@@ -48,6 +48,71 @@ mode = "copy"
 	assert.Equal(t, "copy", cfg.Dotfiles.Files[1].Mode)
 }
 
+func TestLoadConfig_PostHookSudo(t *testing.T) {
+	path := withTempConfig(t, `
+[apt]
+packages = ["mypkg"]
+
+[[apt.post_hook]]
+name = "mypkg"
+post_install = "some-system-command"
+sudo = true
+`)
+	cfg, err := loadConfig(path)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Apt)
+
+	require.Len(t, cfg.Apt.PostHooks, 1)
+	assert.True(t, cfg.Apt.PostHooks[0].Sudo)
+}
+
+func TestLoadConfig_SudoField(t *testing.T) {
+	path := withTempConfig(t, `
+[dotfiles]
+source_dir = "~/dotfiles/sources"
+
+[[dotfiles.file]]
+src = "xorg/20-amdgpu.conf"
+dest = "/etc/X11/xorg.conf.d/20-amdgpu.conf"
+mode = "copy"
+sudo = true
+
+[[dotfiles.file]]
+src = "vimrc"
+dest = "~/.vimrc"
+`)
+	cfg, err := loadConfig(path)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Dotfiles)
+
+	assert.Equal(t, 2, len(cfg.Dotfiles.Files))
+	assert.True(t, cfg.Dotfiles.Files[0].Sudo)
+	assert.False(t, cfg.Dotfiles.Files[1].Sudo)
+}
+
+func TestLoadConfig_ExecutableField(t *testing.T) {
+	path := withTempConfig(t, `
+[dotfiles]
+source_dir = "~/dotfiles/sources"
+
+[[dotfiles.file]]
+src = "autorandr/postswitch"
+dest = "~/.config/autorandr/postswitch"
+executable = true
+
+[[dotfiles.file]]
+src = "vimrc"
+dest = "~/.vimrc"
+`)
+	cfg, err := loadConfig(path)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.Dotfiles)
+
+	assert.Equal(t, 2, len(cfg.Dotfiles.Files))
+	assert.True(t, cfg.Dotfiles.Files[0].Executable)
+	assert.False(t, cfg.Dotfiles.Files[1].Executable)
+}
+
 func TestLoadConfig_PackageWithPostInstall(t *testing.T) {
 	path := withTempConfig(t, `
 [apt]

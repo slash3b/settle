@@ -103,16 +103,6 @@ func writeOsRelease(t *testing.T, content string) {
 	osReleasePath = path
 }
 
-// writeLockfile writes a lockfile.json next to a config file.
-func writeLockfile(t *testing.T, configPath string, content string) {
-	t.Helper()
-	dir := filepath.Dir(configPath)
-	path := filepath.Join(dir, "lockfile.json")
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("failed to write lockfile: %v", err)
-	}
-}
-
 // mockInstalledVersion installs a mock GetInstalledVersion that returns
 // versions from the given map. Missing keys return an error.
 func mockInstalledVersion(versions map[string]string) {

@@ -114,17 +114,49 @@ func (d *DotfilesManager) Apply(link Dotfile, dryRun bool) (bool, error) {
 		return false, err
 	}
 
-	// Handle copy mode
+	var changed bool
 	if DotfileMode(link.Mode) == ModeCopy {
-		return d.applyCopy(src, dest, status, dryRun)
+		changed, err = d.applyCopy(src, dest, status, dryRun, link.Sudo)
+	} else {
+		changed, err = d.applyLink(src, dest, status, dryRun, link.Sudo)
+	}
+	if err != nil {
+		return false, err
 	}
 
-	// Default: link mode
-	return d.applyLink(src, dest, status, dryRun)
+	if link.Executable && !dryRun {
+		if link.Sudo {
+			if err := runSudo("chmod", "755", dest); err != nil {
+				return false, fmt.Errorf("failed to set executable: %w", err)
+			}
+		} else {
+			// os.Chmod follows symlinks, so this correctly chmods the source
+			// in link mode and the copied file in copy mode.
+			if err := os.Chmod(dest, 0o755); err != nil {
+				return false, fmt.Errorf("failed to set executable: %w", err)
+			}
+		}
+	}
+
+	return changed, nil
+}
+
+// runSudo executes a command with sudo, returning a descriptive error on failure.
+func runSudo(args ...string) error {
+	var stderr bytes.Buffer
+	cmd := execCommand("sudo", args...)
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		if stderr.Len() > 0 {
+			return fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
+		}
+		return err
+	}
+	return nil
 }
 
 // applyLink handles symlink mode
-func (d *DotfilesManager) applyLink(src, dest string, status LinkStatus, dryRun bool) (bool, error) {
+func (d *DotfilesManager) applyLink(src, dest string, status LinkStatus, dryRun, sudo bool) (bool, error) {
 	switch status {
 	case LinkCorrect:
 		return false, nil
@@ -133,11 +165,20 @@ func (d *DotfilesManager) applyLink(src, dest string, status LinkStatus, dryRun 
 		if dryRun {
 			return true, nil
 		}
-		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-			return false, fmt.Errorf("failed to create directory: %w", err)
-		}
-		if err := os.Symlink(src, dest); err != nil {
-			return false, fmt.Errorf("failed to create symlink: %w", err)
+		if sudo {
+			if err := runSudo("mkdir", "-p", filepath.Dir(dest)); err != nil {
+				return false, fmt.Errorf("failed to create directory: %w", err)
+			}
+			if err := runSudo("ln", "-sf", src, dest); err != nil {
+				return false, fmt.Errorf("failed to create symlink: %w", err)
+			}
+		} else {
+			if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+				return false, fmt.Errorf("failed to create directory: %w", err)
+			}
+			if err := os.Symlink(src, dest); err != nil {
+				return false, fmt.Errorf("failed to create symlink: %w", err)
+			}
 		}
 		return true, nil
 
@@ -145,11 +186,18 @@ func (d *DotfilesManager) applyLink(src, dest string, status LinkStatus, dryRun 
 		if dryRun {
 			return true, nil
 		}
-		if err := os.Remove(dest); err != nil {
-			return false, fmt.Errorf("failed to remove old symlink: %w", err)
-		}
-		if err := os.Symlink(src, dest); err != nil {
-			return false, fmt.Errorf("failed to create symlink: %w", err)
+		if sudo {
+			// ln -sf atomically replaces the existing symlink
+			if err := runSudo("ln", "-sf", src, dest); err != nil {
+				return false, fmt.Errorf("failed to create symlink: %w", err)
+			}
+		} else {
+			if err := os.Remove(dest); err != nil {
+				return false, fmt.Errorf("failed to remove old symlink: %w", err)
+			}
+			if err := os.Symlink(src, dest); err != nil {
+				return false, fmt.Errorf("failed to create symlink: %w", err)
+			}
 		}
 		return true, nil
 
@@ -158,14 +206,26 @@ func (d *DotfilesManager) applyLink(src, dest string, status LinkStatus, dryRun 
 			return true, nil
 		}
 		backupPath := dest + ".backup"
-		if err := os.Rename(dest, backupPath); err != nil {
-			return false, fmt.Errorf("failed to backup existing file: %w", err)
-		}
-		if d.verbose {
-			fmt.Printf("  backed up %s -> %s\n", dest, backupPath)
-		}
-		if err := os.Symlink(src, dest); err != nil {
-			return false, fmt.Errorf("failed to create symlink: %w", err)
+		if sudo {
+			if err := runSudo("mv", dest, backupPath); err != nil {
+				return false, fmt.Errorf("failed to backup existing file: %w", err)
+			}
+			if d.verbose {
+				fmt.Printf("  backed up %s -> %s\n", dest, backupPath)
+			}
+			if err := runSudo("ln", "-sf", src, dest); err != nil {
+				return false, fmt.Errorf("failed to create symlink: %w", err)
+			}
+		} else {
+			if err := os.Rename(dest, backupPath); err != nil {
+				return false, fmt.Errorf("failed to backup existing file: %w", err)
+			}
+			if d.verbose {
+				fmt.Printf("  backed up %s -> %s\n", dest, backupPath)
+			}
+			if err := os.Symlink(src, dest); err != nil {
+				return false, fmt.Errorf("failed to create symlink: %w", err)
+			}
 		}
 		return true, nil
 
@@ -177,7 +237,7 @@ func (d *DotfilesManager) applyLink(src, dest string, status LinkStatus, dryRun 
 }
 
 // applyCopy handles copy mode
-func (d *DotfilesManager) applyCopy(src, dest string, status LinkStatus, dryRun bool) (bool, error) {
+func (d *DotfilesManager) applyCopy(src, dest string, status LinkStatus, dryRun, sudo bool) (bool, error) {
 	switch status {
 	case CopyCorrect:
 		return false, nil
@@ -186,11 +246,20 @@ func (d *DotfilesManager) applyCopy(src, dest string, status LinkStatus, dryRun 
 		if dryRun {
 			return true, nil
 		}
-		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-			return false, fmt.Errorf("failed to create directory: %w", err)
-		}
-		if err := copyFile(src, dest); err != nil {
-			return false, fmt.Errorf("failed to copy file: %w", err)
+		if sudo {
+			if err := runSudo("mkdir", "-p", filepath.Dir(dest)); err != nil {
+				return false, fmt.Errorf("failed to create directory: %w", err)
+			}
+			if err := runSudo("cp", src, dest); err != nil {
+				return false, fmt.Errorf("failed to copy file: %w", err)
+			}
+		} else {
+			if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+				return false, fmt.Errorf("failed to create directory: %w", err)
+			}
+			if err := copyFile(src, dest); err != nil {
+				return false, fmt.Errorf("failed to copy file: %w", err)
+			}
 		}
 		return true, nil
 
@@ -198,8 +267,14 @@ func (d *DotfilesManager) applyCopy(src, dest string, status LinkStatus, dryRun 
 		if dryRun {
 			return true, nil
 		}
-		if err := copyFile(src, dest); err != nil {
-			return false, fmt.Errorf("failed to update copy: %w", err)
+		if sudo {
+			if err := runSudo("cp", src, dest); err != nil {
+				return false, fmt.Errorf("failed to update copy: %w", err)
+			}
+		} else {
+			if err := copyFile(src, dest); err != nil {
+				return false, fmt.Errorf("failed to update copy: %w", err)
+			}
 		}
 		return true, nil
 
