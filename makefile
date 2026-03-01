@@ -1,6 +1,6 @@
 BINARY := settle
 BUILD_TIME := $(shell date -u '+%Y-%m-%d %H:%M:%S UTC')
-LDFLAGS := -X 'main.BuildTime=$(BUILD_TIME)'
+LDFLAGS := -X 'main.buildTime=$(BUILD_TIME)'
 
 .PHONY: build
 build:

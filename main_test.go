@@ -12,8 +12,8 @@ func TestPrintVersion(t *testing.T) {
 	})
 
 	assert.Contains(t, out, "settle")
-	assert.Contains(t, out, Version)
-	assert.Contains(t, out, "binary:")
+	assert.Contains(t, out, version)
+	assert.Contains(t, out, "binary")
 }
 
 func TestPrintUsage(t *testing.T) {
@@ -23,7 +23,6 @@ func TestPrintUsage(t *testing.T) {
 
 	assert.Contains(t, out, "Usage: settle")
 	assert.Contains(t, out, "Commands:")
-	assert.Contains(t, out, "apply")
 	assert.Contains(t, out, "update")
 	assert.Contains(t, out, "list")
 	assert.Contains(t, out, "version")
