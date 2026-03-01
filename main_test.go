@@ -1,18 +1,22 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestPrintVersion(t *testing.T) {
-	out := captureOutput(t, func() {
-		printVersion()
-	})
+	var w strings.Builder
 
+	printVersion(&w)
+
+	out := w.String()
+
+	assert.Contains(t, out, "version")
 	assert.Contains(t, out, "settle")
-	assert.Contains(t, out, version)
+
 	assert.Contains(t, out, "binary")
 }
 

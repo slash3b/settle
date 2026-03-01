@@ -48,20 +48,24 @@ func captureOutput(t *testing.T, fn func()) string {
 // captureStderr redirects os.Stderr for the duration of fn.
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
-	old := os.Stderr
+
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatalf("os.Pipe: %v", err)
 	}
+
+	// prevErr := os.Stderr
+
 	os.Stderr = w
 
-	fn()
+	fn() // is this shit not blocking???
 
-	_ = w.Close()
-	os.Stderr = old
+	w.Close()
+	// os.Stderr = prevErr
 
 	var buf bytes.Buffer
 	_, _ = io.Copy(&buf, r)
+
 	return buf.String()
 }
 

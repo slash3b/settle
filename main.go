@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -31,7 +32,7 @@ func main() {
 
 	// so we handle --version, -version and version variants.
 	if showVersion || len(flag.Args()) > 0 && flag.Arg(0) == "version" {
-		printVersion()
+		printVersion(os.Stdout)
 		return
 	}
 
@@ -88,19 +89,19 @@ func main() {
 	}
 }
 
-func printVersion() {
+func printVersion(w io.Writer) {
 	exe, err := os.Executable()
 	if err != nil {
 		exe = "unknown"
 	}
 
-	fmt.Printf("%-9s %s\n", "version", version)
+	fmt.Fprintf(w, "%-9s %s\n", "version", version)
 
 	if buildTime != "" {
-		fmt.Printf("%-9s %s\n", "built", buildTime)
+		fmt.Fprintf(w, "%-9s %s\n", "built", buildTime)
 	}
 
-	fmt.Printf("%-9s %s\n", "binary", exe)
+	fmt.Fprintf(w, "%-9s %s\n", "binary", exe)
 }
 
 // an extension on top of flag default help message.
