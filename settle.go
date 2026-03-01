@@ -11,19 +11,17 @@ import (
 
 // Settle is the main orchestrator for the settle application
 type Settle struct {
-	config     *Config
-	configPath string
-	verbose    bool
-	dryRun     bool
+	config  *Config
+	verbose bool
+	dryRun  bool
 }
 
 // NewSettle creates a new Settle orchestrator
-func NewSettle(config *Config, configPath string, verbose, dryRun bool) *Settle {
+func NewSettle(config *Config, verbose, dryRun bool) *Settle {
 	return &Settle{
-		config:     config,
-		configPath: configPath,
-		verbose:    verbose,
-		dryRun:     dryRun,
+		config:  config,
+		verbose: verbose,
+		dryRun:  dryRun,
 	}
 }
 
@@ -32,13 +30,6 @@ func (s *Settle) Apply() error {
 	if s.dryRun {
 		fmt.Println("[dry-run mode - no changes will be made]")
 		fmt.Println()
-	}
-
-	// Pull latest config from git if applicable (best-effort)
-	if !s.dryRun {
-		if err := GitPull(s.configPath, s.verbose); err != nil {
-			fmt.Printf("Warning: %v\n", err)
-		}
 	}
 
 	managersFound := 0

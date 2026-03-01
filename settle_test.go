@@ -17,7 +17,7 @@ func TestApply_NoConfig(t *testing.T) {
 	saveMocks(t)
 
 	cfg := &Config{}
-	s := NewSettle(cfg, "/tmp/config.toml", false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -49,7 +49,7 @@ packages = ["vim", "git"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -89,7 +89,7 @@ packages = ["vim", "curl"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -123,7 +123,7 @@ packages = ["curl"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, true)
+	s := NewSettle(cfg, false, true)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -153,7 +153,7 @@ packages = ["badpkg"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -174,7 +174,7 @@ packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -204,7 +204,7 @@ packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, true, false)
+	s := NewSettle(cfg, true, false)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -225,7 +225,7 @@ packages = []
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -262,7 +262,7 @@ post_install = "echo post-install-ran"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -297,7 +297,7 @@ post_install = "echo test"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, true)
+	s := NewSettle(cfg, false, true)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -332,7 +332,7 @@ dest = "`+destFile+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -357,7 +357,7 @@ source_dir = "/tmp"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -389,7 +389,7 @@ dest = "`+destFile+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, true)
+	s := NewSettle(cfg, false, true)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -422,7 +422,7 @@ dest = "`+destFile+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, true, false)
+	s := NewSettle(cfg, true, false)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -449,7 +449,7 @@ dest = "`+filepath.Join(dir, ".vimrc")+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -484,7 +484,7 @@ dest = "`+destDir+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	// applyDotfiles records errors but doesn't return error
 	out := captureOutput(t, func() {
@@ -519,7 +519,7 @@ packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -558,7 +558,7 @@ post_install = "failing-command"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -601,7 +601,7 @@ dest = "`+destFile+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -636,7 +636,7 @@ dest = "`+destFile+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -665,7 +665,7 @@ packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Update()
@@ -678,7 +678,7 @@ packages = ["vim"]
 
 func TestUpdate_NoPackages(t *testing.T) {
 	cfg := &Config{}
-	s := NewSettle(cfg, "/tmp/config.toml", false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Update()
@@ -690,7 +690,7 @@ func TestUpdate_NoPackages(t *testing.T) {
 
 func TestUpdate_EmptyPackages(t *testing.T) {
 	cfg := &Config{Apt: &AptConfig{}}
-	s := NewSettle(cfg, "/tmp/config.toml", false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Update()
@@ -710,7 +710,7 @@ packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, true)
+	s := NewSettle(cfg, false, true)
 
 	out := captureOutput(t, func() {
 		err := s.Update()
@@ -726,7 +726,7 @@ func TestUpdate_UnsupportedDistro(t *testing.T) {
 	writeOsRelease(t, "ID=arch\n")
 
 	cfg := &Config{Apt: &AptConfig{Packages: []string{"vim"}}}
-	s := NewSettle(cfg, "/tmp/config.toml", false, false)
+	s := NewSettle(cfg, false, false)
 
 	err := s.Update()
 	require.Error(t, err)
@@ -754,7 +754,7 @@ name = "pipewire"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Update()
@@ -781,7 +781,7 @@ packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, true, false)
+	s := NewSettle(cfg, true, false)
 
 	out := captureOutput(t, func() {
 		err := s.Update()
@@ -805,7 +805,7 @@ packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Update()
@@ -834,7 +834,7 @@ packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Update()
@@ -874,7 +874,7 @@ packages = ["vim", "curl"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.List()
@@ -888,7 +888,7 @@ packages = ["vim", "curl"]
 
 func TestList_Empty(t *testing.T) {
 	cfg := &Config{}
-	s := NewSettle(cfg, "/tmp/config.toml", false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.List()
@@ -921,7 +921,7 @@ dest = "`+destFile+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.List()
@@ -941,7 +941,7 @@ source_dir = "/tmp"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.List()
@@ -971,7 +971,7 @@ packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.List()
@@ -997,7 +997,7 @@ packages = ["badpkg"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.List()
@@ -1025,7 +1025,7 @@ packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.List()
@@ -1060,7 +1060,7 @@ name = "pipewire"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.List()
@@ -1100,7 +1100,7 @@ dest = "`+tmuxDest+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.List()
@@ -1135,7 +1135,7 @@ packages = []
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.List()
@@ -1218,7 +1218,7 @@ dest = "`+missingDest+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.List()
@@ -1252,7 +1252,7 @@ dest = "`+filepath.Join(dir, ".vimrc")+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.List()
@@ -1289,7 +1289,7 @@ dest = "%s"
 `, remote, dest))
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -1331,7 +1331,7 @@ dest = "%s"
 `, remote, dest))
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -1357,7 +1357,7 @@ dest = "%s"
 `, remote, dest))
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, true)
+	s := NewSettle(cfg, false, true)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()
@@ -1382,7 +1382,7 @@ dest = "%s"
 `, dest))
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	captureOutput(t, func() {
 		err := s.Apply()
@@ -1404,7 +1404,7 @@ dest = "%s"
 `, dest))
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	captureOutput(t, func() {
 		err := s.Apply()
@@ -1447,7 +1447,7 @@ dest = "%s"
 `, remote, dest))
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Update()
@@ -1474,7 +1474,7 @@ dest = "%s"
 `, dest))
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Update()
@@ -1507,7 +1507,7 @@ dest = "%s"
 `, remote, dest))
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, true)
+	s := NewSettle(cfg, false, true)
 
 	out := captureOutput(t, func() {
 		err := s.Update()
@@ -1549,7 +1549,7 @@ dest = "%s"
 `, remote, clonedDest, missingDest, notRepoDest))
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.List()
@@ -1584,7 +1584,7 @@ version = "v2.9.0"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.applyGo()
@@ -1613,7 +1613,7 @@ path = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
 version = "v2.9.0"
 `)
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.applyGo()
@@ -1643,7 +1643,7 @@ path = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
 version = "v2.9.0"
 `)
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, true)
+	s := NewSettle(cfg, false, true)
 
 	out := captureOutput(t, func() {
 		err := s.applyGo()
@@ -1670,7 +1670,7 @@ path = "github.com/user/tool"
 version = "v1.0.0"
 `)
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	captureOutput(t, func() {
 		err := s.applyGo()
@@ -1690,7 +1690,7 @@ path = "github.com/user/tool"
 version = "v1.0.0"
 `)
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	captureOutput(t, func() {
 		err := s.applyGo()
@@ -1718,7 +1718,7 @@ path = "golang.org/x/tools/cmd/goimports"
 version = "v0.25.0"
 `)
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.updateGo()
@@ -1744,7 +1744,7 @@ path = "github.com/user/tool"
 version = "v1.0.0"
 `)
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, true)
+	s := NewSettle(cfg, false, true)
 
 	out := captureOutput(t, func() {
 		err := s.updateGo()
@@ -1768,7 +1768,7 @@ path = "github.com/user/tool"
 version = "v1.0.0"
 `)
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	captureOutput(t, func() {
 		err := s.updateGo()
@@ -1796,7 +1796,7 @@ version = "v0.25.0"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		s.listGo()
@@ -1820,7 +1820,7 @@ path = "github.com/user/tool"
 version = "v1.0.0"
 `)
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		s.listGo()
@@ -1847,7 +1847,7 @@ path = "github.com/user/tool"
 version = "v1.0.0"
 `)
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, configPath, false, false)
+	s := NewSettle(cfg, false, false)
 
 	out := captureOutput(t, func() {
 		err := s.Apply()

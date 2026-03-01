@@ -10,63 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGitPull_NoGitDir(t *testing.T) {
-	dir := t.TempDir()
-	configPath := filepath.Join(dir, "config.toml")
-
-	err := GitPull(configPath, false)
-	assert.NoError(t, err) // silently skips
-}
-
-func TestGitPull_CleanNoRemote(t *testing.T) {
-	dir := t.TempDir()
-
-	run(t, dir, "git", "init")
-	run(t, dir, "git", "config", "user.email", "test@test.com")
-	run(t, dir, "git", "config", "user.name", "Test")
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "file.txt"), []byte("initial"), 0o644))
-	run(t, dir, "git", "add", ".")
-	run(t, dir, "git", "commit", "-m", "initial")
-
-	configPath := filepath.Join(dir, "config.toml")
-	err := GitPull(configPath, false)
-	// No remote configured — pull should fail
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "git pull failed")
-}
-
-func TestGitPull_Success(t *testing.T) {
-	// Create "remote" repo
-	remote := t.TempDir()
-	run(t, remote, "git", "init", "--bare")
-
-	// Clone it
-	parent := t.TempDir()
-	local := filepath.Join(parent, "repo")
-	run(t, parent, "git", "clone", remote, local)
-	run(t, local, "git", "config", "user.email", "test@test.com")
-	run(t, local, "git", "config", "user.name", "Test")
-
-	// Create initial commit via a second clone, push
-	other := filepath.Join(parent, "other")
-	run(t, parent, "git", "clone", remote, other)
-	run(t, other, "git", "config", "user.email", "test@test.com")
-	run(t, other, "git", "config", "user.name", "Test")
-	require.NoError(t, os.WriteFile(filepath.Join(other, "config.toml"), []byte("data"), 0o644))
-	run(t, other, "git", "add", ".")
-	run(t, other, "git", "commit", "-m", "add config")
-	run(t, other, "git", "push")
-
-	// Now pull from local — should succeed
-	configPath := filepath.Join(local, "config.toml")
-	err := GitPull(configPath, false)
-	require.NoError(t, err)
-
-	// Verify the file arrived
-	_, err = os.Stat(filepath.Join(local, "config.toml"))
-	assert.NoError(t, err)
-}
-
 // --- GitClone tests ---
 
 func TestGitClone_Success(t *testing.T) {

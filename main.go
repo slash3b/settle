@@ -28,6 +28,7 @@ func printVersion() {
 	if err != nil {
 		exe = "unknown"
 	}
+
 	fmt.Printf("settle %s\n", Version)
 	if BuildTime != "" {
 		fmt.Printf("built: %s\n", BuildTime)
@@ -94,7 +95,7 @@ func main() {
 	}
 
 	// Create the orchestrator
-	settle := NewSettle(cfg, configPath, verbose, dryRun)
+	settle := NewSettle(cfg, verbose, dryRun)
 
 	// Handle subcommands
 	args := flag.Args()
