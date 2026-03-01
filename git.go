@@ -36,4 +36,3 @@ func GitPullRepo(dir string, verbose bool) error {
 
 	return nil
 }
-

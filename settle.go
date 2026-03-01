@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,32 +34,33 @@ func (s *Settle) Apply() error {
 	}
 
 	managersFound := 0
+	var errs []error
 
 	if s.config.Apt != nil {
 		managersFound++
 		if err := s.applyApt(); err != nil {
-			return fmt.Errorf("error handling apt packages: %w", err)
+			errs = append(errs, fmt.Errorf("apt: %w", err))
 		}
 	}
 
 	if s.config.Dotfiles != nil {
 		managersFound++
 		if err := s.applyDotfiles(); err != nil {
-			return fmt.Errorf("error handling dotfiles: %w", err)
+			errs = append(errs, fmt.Errorf("dotfiles: %w", err))
 		}
 	}
 
 	if len(s.config.Git) > 0 {
 		managersFound++
 		if err := s.applyGit(); err != nil {
-			return fmt.Errorf("error handling git repos: %w", err)
+			errs = append(errs, fmt.Errorf("git: %w", err))
 		}
 	}
 
 	if len(s.config.Go) > 0 {
 		managersFound++
 		if err := s.applyGo(); err != nil {
-			return fmt.Errorf("error handling go packages: %w", err)
+			errs = append(errs, fmt.Errorf("go: %w", err))
 		}
 	}
 
@@ -66,8 +68,10 @@ func (s *Settle) Apply() error {
 		return fmt.Errorf("no packages, dotfiles, git repos, or go packages configured in config.toml")
 	}
 
-	fmt.Println("Done!")
-	return nil
+	if len(errs) == 0 {
+		fmt.Println("Done!")
+	}
+	return errors.Join(errs...)
 }
 
 // Update upgrades all managed packages to their latest versions.
@@ -75,33 +79,33 @@ func (s *Settle) Update() error {
 	hasApt := s.config.Apt != nil
 	hasGit := len(s.config.Git) > 0
 	hasGo := len(s.config.Go) > 0
+	var errs []error
 
 	if hasApt {
 		distro := DetectDistro()
 		if !distro.IsDebianBased() {
-			return fmt.Errorf("unsupported distribution: %s", distro)
-		}
+			errs = append(errs, fmt.Errorf("unsupported distribution: %s", distro))
+		} else {
+			manager := NewDebianManager(s.verbose)
 
-		manager := NewDebianManager(s.verbose)
+			var allPackages []string
+			allPackages = append(allPackages, s.config.Apt.Packages...)
+			for _, pkg := range s.config.Apt.PostHooks {
+				allPackages = append(allPackages, pkg.Name)
+			}
 
-		var allPackages []string
-		allPackages = append(allPackages, s.config.Apt.Packages...)
-		for _, pkg := range s.config.Apt.PostHooks {
-			allPackages = append(allPackages, pkg.Name)
-		}
+			if len(allPackages) > 0 {
+				fmt.Printf("Updating %d managed packages...\n", len(allPackages))
 
-		if len(allPackages) > 0 {
-			fmt.Printf("Updating %d managed packages...\n", len(allPackages))
-
-			if s.dryRun {
-				fmt.Println("[dry-run] Would run: apt-get update")
-				fmt.Printf("[dry-run] Would upgrade: %v\n", allPackages)
-			} else {
-				if err := manager.RefreshPackageLists(); err != nil {
-					return fmt.Errorf("failed to update package lists: %w", err)
-				}
-				if err := manager.Upgrade(allPackages); err != nil {
-					return fmt.Errorf("failed to upgrade packages: %w", err)
+				if s.dryRun {
+					fmt.Println("[dry-run] Would run: apt-get update")
+					fmt.Printf("[dry-run] Would upgrade: %v\n", allPackages)
+				} else {
+					if err := manager.RefreshPackageLists(); err != nil {
+						errs = append(errs, fmt.Errorf("failed to update package lists: %w", err))
+					} else if err := manager.Upgrade(allPackages); err != nil {
+						errs = append(errs, fmt.Errorf("failed to upgrade packages: %w", err))
+					}
 				}
 			}
 		}
@@ -109,13 +113,13 @@ func (s *Settle) Update() error {
 
 	if hasGit {
 		if err := s.updateGit(); err != nil {
-			return fmt.Errorf("error updating git repos: %w", err)
+			errs = append(errs, fmt.Errorf("git: %w", err))
 		}
 	}
 
 	if hasGo {
 		if err := s.updateGo(); err != nil {
-			return fmt.Errorf("error updating go packages: %w", err)
+			errs = append(errs, fmt.Errorf("go: %w", err))
 		}
 	}
 
@@ -124,21 +128,25 @@ func (s *Settle) Update() error {
 		return nil
 	}
 
-	fmt.Println("Done!")
-	return nil
+	if len(errs) == 0 {
+		fmt.Println("Done!")
+	}
+	return errors.Join(errs...)
 }
 
 // List shows the status of all packages and dotfiles.
 func (s *Settle) List() error {
+	var errs []error
+
 	if s.config.Apt != nil {
 		if err := s.listApt(); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
 
 	if s.config.Dotfiles != nil {
 		if err := s.listDotfiles(); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
 
@@ -150,7 +158,7 @@ func (s *Settle) List() error {
 		s.listGo()
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 // applyApt handles apt package installation.
@@ -240,10 +248,14 @@ func (s *Settle) applyApt() error {
 				if err := ValidateSudo(); err != nil {
 					return fmt.Errorf("sudo authentication failed: %w", err)
 				}
+				var hookErrs []error
 				for _, pkg := range hooksToRun {
 					if err := manager.RunPostInstall(pkg.Name, pkg.PostInstall, pkg.Sudo); err != nil {
-						return fmt.Errorf("error running post-install for %s: %w", pkg.Name, err)
+						hookErrs = append(hookErrs, fmt.Errorf("post-install for %s: %w", pkg.Name, err))
 					}
+				}
+				if err := errors.Join(hookErrs...); err != nil {
+					return err
 				}
 			}
 		}
@@ -287,12 +299,12 @@ func (s *Settle) applyDotfiles() error {
 
 	linked := 0
 	skipped := 0
-	var errors []string
+	var errs []error
 
 	for _, link := range cfg.Files {
 		created, err := manager.Apply(link, s.dryRun)
 		if err != nil {
-			errors = append(errors, fmt.Sprintf("%s: %v", link.Dest, err))
+			errs = append(errs, fmt.Errorf("%s: %w", link.Dest, err))
 			continue
 		}
 
@@ -311,7 +323,7 @@ func (s *Settle) applyDotfiles() error {
 	for _, dir := range cfg.Dirs {
 		created, err := manager.ApplyDir(dir, s.dryRun)
 		if err != nil {
-			errors = append(errors, fmt.Sprintf("%s: %v", dir.Dest, err))
+			errs = append(errs, fmt.Errorf("%s: %w", dir.Dest, err))
 			continue
 		}
 
@@ -333,14 +345,7 @@ func (s *Settle) applyDotfiles() error {
 		fmt.Printf("Created %d links, %d already correct\n", linked, skipped)
 	}
 
-	if len(errors) > 0 {
-		fmt.Println("\nErrors:")
-		for _, e := range errors {
-			fmt.Printf("  - %s\n", e)
-		}
-	}
-
-	return nil
+	return errors.Join(errs...)
 }
 
 // applyGit clones missing git repos.
@@ -348,6 +353,7 @@ func (s *Settle) applyGit() error {
 	fmt.Printf("\nChecking %d git repos...\n", len(s.config.Git))
 
 	var statuses []PackageStatus
+	var errs []error
 	for _, repo := range s.config.Git {
 		dest := expandPath(repo.Dest)
 		gitDir := filepath.Join(dest, ".git")
@@ -359,9 +365,11 @@ func (s *Settle) applyGit() error {
 					statuses = append(statuses, PackageStatus{Name: repo.Dest, Status: StatusSkipped})
 					continue
 				}
-				return fmt.Errorf("destination %s exists but is not a git repository", dest)
+				errs = append(errs, fmt.Errorf("destination %s exists but is not a git repository", dest))
+				continue
 			}
-			return fmt.Errorf("destination %s exists but is not a directory", dest)
+			errs = append(errs, fmt.Errorf("destination %s exists but is not a directory", dest))
+			continue
 		}
 
 		if s.dryRun {
@@ -371,13 +379,14 @@ func (s *Settle) applyGit() error {
 		}
 
 		if err := GitClone(repo.URL, dest, s.verbose); err != nil {
-			return fmt.Errorf("failed to clone %s: %w", repo.URL, err)
+			errs = append(errs, fmt.Errorf("failed to clone %s: %w", repo.URL, err))
+			continue
 		}
 		statuses = append(statuses, PackageStatus{Name: repo.Dest, Status: StatusInstalled})
 	}
 
 	PrintPackageTable(statuses)
-	return nil
+	return errors.Join(errs...)
 }
 
 // applyGo installs missing Go packages via `go install`.
@@ -390,6 +399,7 @@ func (s *Settle) applyGo() error {
 	fmt.Printf("\nChecking %d go packages...\n", len(s.config.Go))
 
 	var statuses []PackageStatus
+	var errs []error
 	for _, pkg := range s.config.Go {
 		binName := GoPackageBinaryName(pkg.Path)
 
@@ -405,19 +415,21 @@ func (s *Settle) applyGo() error {
 		}
 
 		if err := GoInstall(pkg.Path, pkg.Version, s.verbose); err != nil {
-			return fmt.Errorf("failed to install %s: %w", pkg.Path, err)
+			errs = append(errs, fmt.Errorf("failed to install %s: %w", pkg.Path, err))
+			continue
 		}
 		statuses = append(statuses, PackageStatus{Name: binName, Status: StatusInstalled})
 	}
 
 	PrintPackageTable(statuses)
-	return nil
+	return errors.Join(errs...)
 }
 
 // updateGit pulls latest changes for all cloned git repos.
 func (s *Settle) updateGit() error {
 	fmt.Printf("\nUpdating %d git repos...\n", len(s.config.Git))
 
+	var errs []error
 	for _, repo := range s.config.Git {
 		dest := expandPath(repo.Dest)
 		gitDir := filepath.Join(dest, ".git")
@@ -433,17 +445,18 @@ func (s *Settle) updateGit() error {
 		}
 
 		if err := GitPullRepo(dest, s.verbose); err != nil {
-			return fmt.Errorf("failed to pull %s: %w", repo.Dest, err)
+			errs = append(errs, fmt.Errorf("failed to pull %s: %w", repo.Dest, err))
 		}
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 // updateGo reinstalls all Go packages at their configured versions.
 func (s *Settle) updateGo() error {
 	fmt.Printf("\nUpdating %d go packages...\n", len(s.config.Go))
 
+	var errs []error
 	for _, pkg := range s.config.Go {
 		if s.dryRun {
 			fmt.Printf("[dry-run] Would install: go install %s@%s\n", pkg.Path, pkg.Version)
@@ -451,11 +464,11 @@ func (s *Settle) updateGo() error {
 		}
 
 		if err := GoInstall(pkg.Path, pkg.Version, s.verbose); err != nil {
-			return fmt.Errorf("failed to update %s: %w", pkg.Path, err)
+			errs = append(errs, fmt.Errorf("failed to update %s: %w", pkg.Path, err))
 		}
 	}
 
-	return nil
+	return errors.Join(errs...)
 }
 
 // packageInfo holds version information for a package

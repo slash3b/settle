@@ -451,12 +451,9 @@ dest = "`+filepath.Join(dir, ".vimrc")+`"
 	cfg, _ := loadConfig(configPath)
 	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err) // Apply doesn't return error for individual file errors
-	})
-
-	assert.Contains(t, out, "Errors:")
+	err := s.Apply()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nonexistent")
 }
 
 // --- Apply error paths ---
@@ -486,12 +483,9 @@ dest = "`+destDir+`"
 	cfg, _ := loadConfig(configPath)
 	s := NewSettle(cfg, false, false)
 
-	// applyDotfiles records errors but doesn't return error
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
-	assert.Contains(t, out, "Errors:")
+	err := s.Apply()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "directory exists at destination")
 }
 
 func TestApply_CheckInstalledError(t *testing.T) {
@@ -563,7 +557,7 @@ post_install = "failing-command"
 	out := captureOutput(t, func() {
 		err := s.Apply()
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "error running post-install")
+		assert.Contains(t, err.Error(), "post-install for pipewire")
 	})
 	_ = out
 }

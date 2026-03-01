@@ -208,7 +208,6 @@ func TestUpgrade_Verbose(t *testing.T) {
 	assert.Contains(t, out, "Upgrading 1 packages...")
 }
 
-
 func TestRefreshPackageLists(t *testing.T) {
 	saveMocks(t)
 
