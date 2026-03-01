@@ -21,9 +21,16 @@ type AptConfig struct {
 	PostHooks []PostHook `toml:"post_hook"`
 }
 
+type DotfileDir struct {
+	Src  string `toml:"src"`
+	Dest string `toml:"dest"`
+	Sudo bool   `toml:"sudo"`
+}
+
 type DotfilesConfig struct {
-	SourceDir string    `toml:"source_dir"`
-	Files     []Dotfile `toml:"file"`
+	SourceDir string       `toml:"source_dir"`
+	Files     []Dotfile    `toml:"file"`
+	Dirs      []DotfileDir `toml:"dir"`
 }
 
 type Dotfile struct {

@@ -285,6 +285,51 @@ func (d *DotfilesManager) applyCopy(src, dest string, status LinkStatus, dryRun,
 	return false, nil
 }
 
+// CheckDir checks the status of a directory symlink.
+func (d *DotfilesManager) CheckDir(dir DotfileDir) (LinkStatus, error) {
+	return d.CheckLink(Dotfile{Src: dir.Src, Dest: dir.Dest})
+}
+
+// ApplyDir creates a symlink for a directory entry.
+// If a real directory already exists at the destination, it is backed up before symlinking.
+func (d *DotfilesManager) ApplyDir(dir DotfileDir, dryRun bool) (bool, error) {
+	src := filepath.Join(d.sourceDir, dir.Src)
+	dest := expandPath(dir.Dest)
+
+	status, err := d.CheckDir(dir)
+	if err != nil {
+		return false, err
+	}
+
+	if status == LinkIsDir {
+		if dryRun {
+			return true, nil
+		}
+		backupPath := dest + ".backup"
+		if dir.Sudo {
+			if err := runSudo("mv", dest, backupPath); err != nil {
+				return false, fmt.Errorf("failed to backup existing directory: %w", err)
+			}
+			if err := runSudo("ln", "-sf", src, dest); err != nil {
+				return false, fmt.Errorf("failed to create symlink: %w", err)
+			}
+		} else {
+			if err := os.Rename(dest, backupPath); err != nil {
+				return false, fmt.Errorf("failed to backup existing directory: %w", err)
+			}
+			if err := os.Symlink(src, dest); err != nil {
+				return false, fmt.Errorf("failed to create symlink: %w", err)
+			}
+		}
+		if d.verbose {
+			fmt.Printf("  backed up %s -> %s\n", dest, backupPath)
+		}
+		return true, nil
+	}
+
+	return d.Apply(Dotfile{Src: dir.Src, Dest: dir.Dest, Sudo: dir.Sudo}, dryRun)
+}
+
 // expandPath expands ~ to home directory
 func expandPath(path string) string {
 	if strings.HasPrefix(path, "~/") {

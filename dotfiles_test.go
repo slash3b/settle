@@ -941,6 +941,108 @@ func TestApply_Sudo_CopyMissing(t *testing.T) {
 	assert.Equal(t, []string{"cp", srcFile, destFile}, calls[1].Args)
 }
 
+func TestCheckDir_Missing(t *testing.T) {
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "sources")
+	require.NoError(t, os.MkdirAll(filepath.Join(srcDir, "autorandr"), 0o755))
+
+	dm := NewDotfilesManager(srcDir, false)
+	status, err := dm.CheckDir(DotfileDir{Src: "autorandr", Dest: filepath.Join(dir, "nonexistent")})
+	require.NoError(t, err)
+	assert.Equal(t, LinkMissing, status)
+}
+
+func TestCheckDir_Correct(t *testing.T) {
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "sources")
+	srcSubDir := filepath.Join(srcDir, "autorandr")
+	require.NoError(t, os.MkdirAll(srcSubDir, 0o755))
+
+	dest := filepath.Join(dir, "autorandr-link")
+	require.NoError(t, os.Symlink(srcSubDir, dest))
+
+	dm := NewDotfilesManager(srcDir, false)
+	status, err := dm.CheckDir(DotfileDir{Src: "autorandr", Dest: dest})
+	require.NoError(t, err)
+	assert.Equal(t, LinkCorrect, status)
+}
+
+func TestApplyDir_CreatesMissing(t *testing.T) {
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "sources")
+	srcSubDir := filepath.Join(srcDir, "autorandr")
+	require.NoError(t, os.MkdirAll(srcSubDir, 0o755))
+
+	dest := filepath.Join(dir, "autorandr-link")
+
+	dm := NewDotfilesManager(srcDir, false)
+	created, err := dm.ApplyDir(DotfileDir{Src: "autorandr", Dest: dest}, false)
+	require.NoError(t, err)
+	assert.True(t, created)
+
+	target, err := os.Readlink(dest)
+	require.NoError(t, err)
+	assert.Equal(t, srcSubDir, target)
+}
+
+func TestApplyDir_AlreadyCorrect(t *testing.T) {
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "sources")
+	srcSubDir := filepath.Join(srcDir, "autorandr")
+	require.NoError(t, os.MkdirAll(srcSubDir, 0o755))
+
+	dest := filepath.Join(dir, "autorandr-link")
+	require.NoError(t, os.Symlink(srcSubDir, dest))
+
+	dm := NewDotfilesManager(srcDir, false)
+	created, err := dm.ApplyDir(DotfileDir{Src: "autorandr", Dest: dest}, false)
+	require.NoError(t, err)
+	assert.False(t, created)
+}
+
+func TestApplyDir_RealDirExistsBacksUpAndSymlinks(t *testing.T) {
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "sources")
+	srcSubDir := filepath.Join(srcDir, "autorandr")
+	require.NoError(t, os.MkdirAll(srcSubDir, 0o755))
+
+	// Existing real directory at destination with a file inside
+	dest := filepath.Join(dir, "autorandr")
+	require.NoError(t, os.MkdirAll(dest, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dest, "config"), []byte("old"), 0o644))
+
+	dm := NewDotfilesManager(srcDir, false)
+	created, err := dm.ApplyDir(DotfileDir{Src: "autorandr", Dest: dest}, false)
+	require.NoError(t, err)
+	assert.True(t, created)
+
+	// dest is now a symlink to src
+	target, err := os.Readlink(dest)
+	require.NoError(t, err)
+	assert.Equal(t, srcSubDir, target)
+
+	// backup was created
+	_, err = os.Stat(dest + ".backup")
+	require.NoError(t, err)
+}
+
+func TestApplyDir_DryRun(t *testing.T) {
+	dir := t.TempDir()
+	srcDir := filepath.Join(dir, "sources")
+	require.NoError(t, os.MkdirAll(filepath.Join(srcDir, "autorandr"), 0o755))
+
+	dest := filepath.Join(dir, "autorandr-link")
+
+	dm := NewDotfilesManager(srcDir, false)
+	created, err := dm.ApplyDir(DotfileDir{Src: "autorandr", Dest: dest}, true)
+	require.NoError(t, err)
+	assert.True(t, created)
+
+	// Dry run: symlink must not exist
+	_, err = os.Lstat(dest)
+	assert.True(t, os.IsNotExist(err))
+}
+
 func TestApply_Sudo_DryRun(t *testing.T) {
 	saveMocks(t)
 

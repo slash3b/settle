@@ -285,14 +285,14 @@ func (s *Settle) applyApt() error {
 func (s *Settle) applyDotfiles() error {
 	cfg := s.config.Dotfiles
 
-	if len(cfg.Files) == 0 {
+	if len(cfg.Files) == 0 && len(cfg.Dirs) == 0 {
 		fmt.Println("No dotfiles configured")
 		return nil
 	}
 
 	manager := NewDotfilesManager(cfg.SourceDir, s.verbose)
 
-	fmt.Printf("\nChecking %d dotfile links...\n", len(cfg.Files))
+	fmt.Printf("\nChecking %d dotfile links...\n", len(cfg.Files)+len(cfg.Dirs))
 
 	linked := 0
 	skipped := 0
@@ -311,6 +311,25 @@ func (s *Settle) applyDotfiles() error {
 				fmt.Printf("[dry-run] Would link: %s -> %s\n", link.Dest, link.Src)
 			} else if s.verbose {
 				fmt.Printf("Linked: %s -> %s\n", link.Dest, link.Src)
+			}
+		} else {
+			skipped++
+		}
+	}
+
+	for _, dir := range cfg.Dirs {
+		created, err := manager.ApplyDir(dir, s.dryRun)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", dir.Dest, err))
+			continue
+		}
+
+		if created {
+			linked++
+			if s.dryRun {
+				fmt.Printf("[dry-run] Would link dir: %s -> %s\n", dir.Dest, dir.Src)
+			} else if s.verbose {
+				fmt.Printf("Linked dir: %s -> %s\n", dir.Dest, dir.Src)
 			}
 		} else {
 			skipped++
@@ -562,7 +581,7 @@ func (s *Settle) listApt() error {
 func (s *Settle) listDotfiles() error {
 	cfg := s.config.Dotfiles
 
-	if len(cfg.Files) == 0 {
+	if len(cfg.Files) == 0 && len(cfg.Dirs) == 0 {
 		return nil
 	}
 
@@ -571,41 +590,48 @@ func (s *Settle) listDotfiles() error {
 	yellow := color.New(color.FgYellow)
 	green := color.New(color.FgGreen)
 
-	var items []ListItem
-	for _, link := range cfg.Files {
-		status, err := manager.CheckLink(link)
+	linkStatusItem := func(name string, status LinkStatus, err error) ListItem {
 		var item ListItem
-		item.Name = link.Dest
-
+		item.Name = name
 		if err != nil {
 			item.Status = fmt.Sprintf("error: %v", err)
 			item.Color = red
-		} else {
-			switch status {
-			case LinkCorrect:
-				item.Status = "linked"
-				item.Color = green
-			case LinkMissing:
-				item.Status = "missing"
-				item.Color = red
-			case LinkIncorrect:
-				item.Status = "wrong target"
-				item.Color = yellow
-			case LinkIsFile:
-				item.Status = "file exists"
-				item.Color = yellow
-			case LinkIsDir:
-				item.Status = "dir exists"
-				item.Color = yellow
-			case CopyCorrect:
-				item.Status = "copied"
-				item.Color = green
-			case CopyOutdated:
-				item.Status = "outdated"
-				item.Color = yellow
-			}
+			return item
 		}
-		items = append(items, item)
+		switch status {
+		case LinkCorrect:
+			item.Status = "linked"
+			item.Color = green
+		case LinkMissing:
+			item.Status = "missing"
+			item.Color = red
+		case LinkIncorrect:
+			item.Status = "wrong target"
+			item.Color = yellow
+		case LinkIsFile:
+			item.Status = "file exists"
+			item.Color = yellow
+		case LinkIsDir:
+			item.Status = "dir exists"
+			item.Color = yellow
+		case CopyCorrect:
+			item.Status = "copied"
+			item.Color = green
+		case CopyOutdated:
+			item.Status = "outdated"
+			item.Color = yellow
+		}
+		return item
+	}
+
+	var items []ListItem
+	for _, link := range cfg.Files {
+		status, err := manager.CheckLink(link)
+		items = append(items, linkStatusItem(link.Dest, status, err))
+	}
+	for _, dir := range cfg.Dirs {
+		status, err := manager.CheckDir(dir)
+		items = append(items, linkStatusItem(dir.Dest, status, err))
 	}
 
 	PrintListTable("Dotfiles", items)
