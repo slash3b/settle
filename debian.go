@@ -201,6 +201,16 @@ func (d *DebianManager) RunPostInstall(packageName, script string, sudo bool) er
 	return err
 }
 
+// ValidateSudo refreshes the sudo credential, prompting for a password if needed.
+// Call this before running any privileged post-install hooks to ensure sudo is available.
+func ValidateSudo() error {
+	cmd := execCommand("sudo", "-v")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
 // GetInstalledVersion queries dpkg for the installed version of a package.
 // This is a function variable so it can be swapped in tests.
 var GetInstalledVersion = func(name string) (string, error) {

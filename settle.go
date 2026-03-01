@@ -239,8 +239,17 @@ func (s *Settle) applyApt() error {
 			if err := manager.Install(installable); err != nil {
 				return fmt.Errorf("error installing packages: %w", err)
 			}
+			var hooksToRun []PostHook
 			for _, pkg := range aptCfg.PostHooks {
 				if pkg.PostInstall != "" && missingSet[pkg.Name] {
+					hooksToRun = append(hooksToRun, pkg)
+				}
+			}
+			if len(hooksToRun) > 0 {
+				if err := ValidateSudo(); err != nil {
+					return fmt.Errorf("sudo authentication failed: %w", err)
+				}
+				for _, pkg := range hooksToRun {
 					if err := manager.RunPostInstall(pkg.Name, pkg.PostInstall, pkg.Sudo); err != nil {
 						return fmt.Errorf("error running post-install for %s: %w", pkg.Name, err)
 					}
