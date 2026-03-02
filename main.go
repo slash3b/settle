@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/signal"
 	"runtime"
@@ -34,8 +33,9 @@ func main() {
 	flag.Parse()
 
 	// so we handle --version, -version and version variants.
-	if showVersion || len(flag.Args()) > 0 && flag.Arg(0) == "version" {
+	if showVersion || (len(flag.Args()) > 0 && flag.Arg(0) == "version") {
 		printVersion(os.Stdout)
+
 		return
 	}
 
@@ -45,51 +45,60 @@ func main() {
 		os.Exit(1)
 	}
 
-	// set up signal handling for graceful shutdown on Ctrl+C
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
 		<-sigChan
-		fmt.Println("\n\nInterrupted! Cleaning up...")
+
+		fmt.Println("\n\ninterrupted! cleaning up...")
 
 		os.Exit(2)
 	}()
 
 	cfg, err := loadConfig(configPath)
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		fmt.Fprintf(os.Stderr, "failed to load config %s, err %v\n", configPath, err)
+
+		os.Exit(1)
 	}
 
-	settle := NewSettle(cfg, verbose, dryRun)
+	var (
+		settle = NewSettle(cfg, verbose, dryRun)
+		args   = flag.Args()
+	)
 
-	args := flag.Args()
-	if len(args) > 0 {
-		switch args[0] {
-		case "list":
-			if err := settle.List(); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		case "update":
-			if err := settle.Update(); err != nil {
-				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-				os.Exit(1)
-			}
-			return
-		default:
-			fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", args[0])
-
-			usage()
+	if len(args) == 0 {
+		err := settle.Apply()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 
 			os.Exit(1)
 		}
+
+		return
 	}
 
-	// Default: run apply
-	if err := settle.Apply(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+	switch args[0] {
+	case "list":
+		err := settle.List()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+
+			os.Exit(1)
+		}
+	case "update":
+		err := settle.Update()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+
+			os.Exit(1)
+		}
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", args[0])
+
+		usage()
+
 		os.Exit(1)
 	}
 }
@@ -111,6 +120,8 @@ func printVersion(w io.Writer) {
 
 // an extension on top of flag default help message.
 func printUsage(w io.Writer) func() {
+	flag.CommandLine.SetOutput(w)
+
 	return func() {
 		fmt.Fprintf(w, `Usage: settle [flags] [command]
 
@@ -120,7 +131,6 @@ Commands:
     update   Upgrade all managed packages to latest versions
     list     Show status of all packages and dotfiles
     version  Show version information
-
 Flags:
 `)
 		flag.PrintDefaults()

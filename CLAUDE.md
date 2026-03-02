@@ -237,9 +237,7 @@ Some packages in soft.sh require post-install steps:
 
 When implementing new commands, follow this planned interface:
 
-- `settle` or `settle apply` - Idempotent apply (default behavior)
-- `settle apply --only dotfiles` - Sync configs only
-- `settle apply --only packages` - Install packages only
+- `settle` - Idempotent apply (default behavior)
 - `settle install <package>` - Add to TOML and install
 - `settle update` - Upgrade all managed packages
 - `settle track <file>` - Adopt a file into managed dotfiles

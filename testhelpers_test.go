@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -20,53 +18,6 @@ func withTempConfig(t *testing.T, content string) string {
 	}
 
 	return path
-}
-
-// captureOutput redirects os.Stdout for the duration of fn, then returns
-// whatever was written.
-func captureOutput(t *testing.T, fn func()) string {
-	t.Helper()
-
-	old := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe: %v", err)
-	}
-
-	os.Stdout = w
-
-	fn()
-
-	_ = w.Close()
-	os.Stdout = old
-
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
-	return buf.String()
-}
-
-// captureStderr redirects os.Stderr for the duration of fn.
-func captureStderr(t *testing.T, fn func()) string {
-	t.Helper()
-
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe: %v", err)
-	}
-
-	// prevErr := os.Stderr
-
-	os.Stderr = w
-
-	fn() // is this shit not blocking???
-
-	w.Close()
-	// os.Stderr = prevErr
-
-	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, r)
-
-	return buf.String()
 }
 
 // cmdCall records a command invocation for test assertions.
