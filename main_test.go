@@ -21,9 +21,11 @@ func TestPrintVersion(t *testing.T) {
 }
 
 func TestPrintUsage(t *testing.T) {
-	out := captureStderr(t, func() {
-		printUsage()
-	})
+	var w strings.Builder
+
+	printUsage(&w)
+
+	out := w.String()
 
 	assert.Contains(t, out, "Usage: settle")
 	assert.Contains(t, out, "Commands:")

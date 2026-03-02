@@ -27,7 +27,10 @@ func main() {
 	flag.BoolVar(&verbose, "v", false, "Enable verbose output")
 	flag.BoolVar(&dryRun, "n", false, "Show what would be done without making changes")
 	flag.BoolVar(&showVersion, "version", false, "Show version information")
-	flag.Usage = printUsage
+
+	usage := printUsage(os.Stdout)
+
+	flag.Usage = usage
 	flag.Parse()
 
 	// so we handle --version, -version and version variants.
@@ -77,7 +80,9 @@ func main() {
 			return
 		default:
 			fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", args[0])
-			printUsage()
+
+			usage()
+
 			os.Exit(1)
 		}
 	}
@@ -105,17 +110,19 @@ func printVersion(w io.Writer) {
 }
 
 // an extension on top of flag default help message.
-func printUsage() {
-	fmt.Fprintf(os.Stderr, `Usage: settle [flags] [command]
+func printUsage(w io.Writer) func() {
+	return func() {
+		fmt.Fprintf(w, `Usage: settle [flags] [command]
 
-  Running settle with no command syncs your system to match config.toml.
+Running settle with no command syncs your system to match config.toml.
 
 Commands:
-  update   Upgrade all managed packages to latest versions
-  list     Show status of all packages and dotfiles
-  version  Show version information
+    update   Upgrade all managed packages to latest versions
+    list     Show status of all packages and dotfiles
+    version  Show version information
 
 Flags:
 `)
-	flag.PrintDefaults()
+		flag.PrintDefaults()
+	}
 }
