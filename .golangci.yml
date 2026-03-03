@@ -59,8 +59,6 @@ linters:
     gosec:
       excludes:
         - G204  # subprocess launched with variable — unavoidable for a tool like settle
-    goconst:
-      ignore-tests: true
     revive:
       rules:
         - name: exported
