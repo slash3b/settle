@@ -9,7 +9,6 @@ Define your packages and dotfiles in a single TOML configuration file, and let s
 - **Dotfile management** — Symlink or copy files and directories from a central source
 - **Go tools** — Install Go binaries via `go install`
 - **Git repos** — Clone repositories to specified locations
-- **Idempotent** — Run settle multiple times safely; only changes what's needed
 - **Single config** — One `config.toml` defines your entire environment
 
 ## Installation (Debian/Ubuntu)

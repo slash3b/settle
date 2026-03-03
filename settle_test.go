@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -17,23 +18,24 @@ func TestApply_NoConfig(t *testing.T) {
 	saveMocks(t)
 
 	cfg := &Config{}
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "no packages, dotfiles, git repos, or go packages configured")
-	})
-	_ = out
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Apply()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no packages, dotfiles, git repos, or go packages configured")
 }
 
 func TestApply_AllInstalled(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	execCommand = func(_ string, _ ...string) *exec.Cmd {
 		return exec.Command("echo", "-n", "install ok installed")
 	}
+
 	mockInstalledVersion(map[string]string{
 		"vim": "9.0.1",
 		"git": "2.40.0",
@@ -49,12 +51,15 @@ packages = ["vim", "git"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Apply()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "All packages already installed")
 	assert.Contains(t, out, "Done!")
@@ -66,14 +71,17 @@ func TestApply_InstallsMissing(t *testing.T) {
 
 	// vim installed, curl not
 	execCommand = func(name string, arg ...string) *exec.Cmd {
-		if name == "dpkg-query" {
+		if name == "dpkg-query" { //nolint:goconst
 			if len(arg) >= 3 && arg[2] == "vim" {
 				return exec.Command("echo", "-n", "install ok installed")
 			}
+
 			return exec.Command("false")
 		}
+
 		return exec.Command("true")
 	}
+
 	mockInstalledVersion(map[string]string{
 		"vim":  "9.0.1",
 		"curl": "7.88.1",
@@ -89,12 +97,15 @@ packages = ["vim", "curl"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Apply()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "Need to install: 1")
 	assert.Contains(t, out, "Done!")
@@ -105,13 +116,16 @@ func TestApply_DryRun(t *testing.T) {
 	writeOsRelease(t, "ID=debian\n")
 
 	// curl not installed
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	execCommand = func(name string, _ ...string) *exec.Cmd {
 		if name == "dpkg-query" {
 			return exec.Command("false")
 		}
+
 		require.Fail(t, "should not run apt-get in dry-run mode")
+
 		return nil
 	}
+
 	mockInstalledVersion(map[string]string{})
 	mockAvailableVersion(map[string]string{
 		"curl": "7.88.1",
@@ -123,12 +137,15 @@ packages = ["curl"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, true)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, true, &w)
+
+	err := s.Apply()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "[dry-run")
 	assert.Contains(t, out, "Done!")
@@ -138,12 +155,14 @@ func TestApply_SkipsUnknownPackages(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	execCommand = func(name string, _ ...string) *exec.Cmd {
 		if name == "dpkg-query" {
 			return exec.Command("false")
 		}
+
 		return exec.Command("true")
 	}
+
 	mockInstalledVersion(map[string]string{})
 	mockAvailableVersion(map[string]string{}) // empty = all unknown
 
@@ -153,12 +172,15 @@ packages = ["badpkg"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Apply()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "Skipping 1 unknown packages")
 	assert.Contains(t, out, "badpkg")
@@ -174,23 +196,24 @@ packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "unsupported distribution")
-	})
-	_ = out
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Apply()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported distribution")
 }
 
 func TestApply_Verbose(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	execCommand = func(_ string, _ ...string) *exec.Cmd {
 		return exec.Command("echo", "-n", "install ok installed")
 	}
+
 	mockInstalledVersion(map[string]string{
 		"vim": "9.0.1",
 	})
@@ -204,12 +227,15 @@ packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, true, false)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, true, false, &w)
+
+	err := s.Apply()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "Detected distribution: debian")
 	assert.Contains(t, out, "Done!")
@@ -225,12 +251,15 @@ packages = []
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Apply()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "No apt packages configured")
 }
@@ -240,12 +269,14 @@ func TestApply_PostInstallHooks(t *testing.T) {
 	writeOsRelease(t, "ID=debian\n")
 
 	// pipewire not installed
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	execCommand = func(name string, _ ...string) *exec.Cmd {
 		if name == "dpkg-query" {
 			return exec.Command("false")
 		}
+
 		return exec.Command("true")
 	}
+
 	mockInstalledVersion(map[string]string{
 		"pipewire": "0.3.65",
 	})
@@ -262,12 +293,15 @@ post_install = "echo post-install-ran"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Apply()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "Running post-install for pipewire")
 	assert.Contains(t, out, "Done!")
@@ -277,13 +311,16 @@ func TestApply_DryRunWithPostInstall(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	execCommand = func(name string, _ ...string) *exec.Cmd {
 		if name == "dpkg-query" {
 			return exec.Command("false")
 		}
+
 		require.Fail(t, "should not run commands in dry-run mode")
+
 		return nil
 	}
+
 	mockAvailableVersion(map[string]string{
 		"pipewire": "0.3.65",
 	})
@@ -297,12 +334,15 @@ post_install = "echo test"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, true)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, true, &w)
+
+	err := s.Apply()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "[dry-run] Would install")
 	assert.Contains(t, out, "[dry-run] Would run post-install for pipewire")
@@ -332,12 +372,15 @@ dest = "`+destFile+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Apply()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "Created 1 links")
 	assert.Contains(t, out, "Done!")
@@ -357,12 +400,15 @@ source_dir = "/tmp"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Apply()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "No dotfiles configured")
 }
@@ -389,12 +435,15 @@ dest = "`+destFile+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, true)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, true, &w)
+
+	err := s.Apply()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "[dry-run] Would link")
 	assert.Contains(t, out, "[dry-run] Would create 1 links")
@@ -422,12 +471,15 @@ dest = "`+destFile+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, true, false)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, true, false, &w)
+
+	err := s.Apply()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "Linked:")
 }
@@ -449,7 +501,10 @@ dest = "`+filepath.Join(dir, ".vimrc")+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
+
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
 
 	err := s.Apply()
 	require.Error(t, err)
@@ -468,6 +523,7 @@ func TestApply_ApplyDotfilesError(t *testing.T) {
 	// Source exists, but dest is a directory — will error in link mode
 	srcFile := filepath.Join(srcDir, "vimrc")
 	require.NoError(t, os.WriteFile(srcFile, []byte("content"), 0o644))
+
 	destDir := filepath.Join(dir, ".vimrc")
 	require.NoError(t, os.MkdirAll(destDir, 0o755))
 
@@ -481,7 +537,10 @@ dest = "`+destDir+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
+
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
 
 	err := s.Apply()
 	require.Error(t, err)
@@ -497,11 +556,14 @@ func TestApply_CheckInstalledError(t *testing.T) {
 		if name == "dpkg-query" {
 			return exec.Command("false")
 		}
+
 		if name == "sudo" && len(arg) >= 2 && arg[1] == "update" {
 			return exec.Command("true")
 		}
+
 		return exec.Command("bash", "-c", "exit 1")
 	}
+
 	mockInstalledVersion(map[string]string{})
 	mockAvailableVersion(map[string]string{
 		"vim": "9.0.1",
@@ -513,29 +575,32 @@ packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "error installing packages")
-	})
-	_ = out
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Apply()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "error installing packages")
 }
 
 func TestApply_PostInstallError(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	execCommand = func(name string, _ ...string) *exec.Cmd {
 		if name == "dpkg-query" {
 			return exec.Command("false")
 		}
+
 		if name == "bash" {
 			return exec.Command("false")
 		}
+
 		return exec.Command("true")
 	}
+
 	mockInstalledVersion(map[string]string{
 		"pipewire": "0.3.65",
 	})
@@ -552,23 +617,24 @@ post_install = "failing-command"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "post-install for pipewire")
-	})
-	_ = out
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Apply()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "post-install for pipewire")
 }
 
 func TestApply_BothAptAndDotfiles(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	execCommand = func(_ string, _ ...string) *exec.Cmd {
 		return exec.Command("echo", "-n", "install ok installed")
 	}
+
 	mockInstalledVersion(map[string]string{
 		"vim": "9.0.1",
 	})
@@ -595,12 +661,15 @@ dest = "`+destFile+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Apply()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "Done!")
 	assert.Contains(t, out, "Created 1 links")
@@ -630,12 +699,15 @@ dest = "`+destFile+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Apply()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "Created 0 links, 1 already correct")
 }
@@ -646,9 +718,10 @@ func TestUpdate_Success(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	execCommand = func(_ string, _ ...string) *exec.Cmd {
 		return exec.Command("true")
 	}
+
 	mockInstalledVersion(map[string]string{
 		"vim": "9.0.2",
 	})
@@ -659,39 +732,45 @@ packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Update()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Update()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "Updating 1 managed packages")
-	assert.Contains(t, out, "Done!")
 }
 
 func TestUpdate_NoPackages(t *testing.T) {
 	cfg := &Config{}
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Update()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
 
-	assert.Contains(t, out, "No packages or git repos configured")
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Update()
+	require.NoError(t, err)
+
+	out := w.String()
+
+	assert.Contains(t, out, "nothing to update")
 }
 
 func TestUpdate_EmptyPackages(t *testing.T) {
 	cfg := &Config{Apt: &AptConfig{}}
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Update()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
 
-	assert.Contains(t, out, "Done!")
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Update()
+	require.NoError(t, err)
+
+	assert.Empty(t, w.String())
 }
 
 func TestUpdate_DryRun(t *testing.T) {
@@ -704,12 +783,15 @@ packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, true)
 
-	out := captureOutput(t, func() {
-		err := s.Update()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, true, &w)
+
+	err := s.Update()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "[dry-run] Would run: apt-get update")
 	assert.Contains(t, out, "[dry-run] Would upgrade")
@@ -720,7 +802,10 @@ func TestUpdate_UnsupportedDistro(t *testing.T) {
 	writeOsRelease(t, "ID=arch\n")
 
 	cfg := &Config{Apt: &AptConfig{Packages: []string{"vim"}}}
-	s := NewSettle(cfg, false, false)
+
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
 
 	err := s.Update()
 	require.Error(t, err)
@@ -731,9 +816,10 @@ func TestUpdate_WithPackageSection(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	execCommand = func(_ string, _ ...string) *exec.Cmd {
 		return exec.Command("true")
 	}
+
 	mockInstalledVersion(map[string]string{
 		"vim":      "9.0.2",
 		"pipewire": "0.3.66",
@@ -748,12 +834,15 @@ name = "pipewire"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Update()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Update()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "Updating 2 managed packages")
 }
@@ -762,9 +851,10 @@ func TestUpdate_Verbose(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	execCommand = func(_ string, _ ...string) *exec.Cmd {
 		return exec.Command("true")
 	}
+
 	mockInstalledVersion(map[string]string{
 		"vim": "9.0.2",
 	})
@@ -775,12 +865,15 @@ packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, true, false)
 
-	out := captureOutput(t, func() {
-		err := s.Update()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, true, false, &w)
+
+	err := s.Update()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "Updating 1 managed packages")
 }
@@ -789,7 +882,7 @@ func TestUpdate_RefreshError(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	execCommand = func(_ string, _ ...string) *exec.Cmd {
 		return exec.Command("bash", "-c", "exit 1")
 	}
 
@@ -799,14 +892,14 @@ packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Update()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to update package lists")
-	})
-	_ = out
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Update()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to update package lists")
 }
 
 func TestUpdate_UpgradeError(t *testing.T) {
@@ -814,11 +907,12 @@ func TestUpdate_UpgradeError(t *testing.T) {
 	writeOsRelease(t, "ID=debian\n")
 
 	callCount := 0
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	execCommand = func(_ string, _ ...string) *exec.Cmd {
 		callCount++
 		if callCount == 1 {
 			return exec.Command("true")
 		}
+
 		return exec.Command("bash", "-c", "exit 1")
 	}
 
@@ -828,14 +922,14 @@ packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Update()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to upgrade packages")
-	})
-	_ = out
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Update()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to upgrade packages")
 }
 
 // --- List tests ---
@@ -850,10 +944,13 @@ func TestList_Packages(t *testing.T) {
 			if len(arg) >= 3 && arg[2] == "vim" {
 				return exec.Command("echo", "-n", "install ok installed")
 			}
+
 			return exec.Command("false")
 		}
+
 		return exec.Command("true")
 	}
+
 	mockInstalledVersion(map[string]string{
 		"vim": "9.0.1",
 	})
@@ -868,12 +965,14 @@ packages = ["vim", "curl"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.List()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	s.List()
+
+	out := w.String()
 
 	assert.Contains(t, out, "Packages:")
 	assert.Contains(t, out, "vim")
@@ -882,14 +981,14 @@ packages = ["vim", "curl"]
 
 func TestList_Empty(t *testing.T) {
 	cfg := &Config{}
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.List()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
 
-	assert.Equal(t, "", out)
+	s := NewSettle(cfg, false, false, &w)
+
+	s.List()
+
+	assert.Empty(t, w.String())
 }
 
 func TestList_Dotfiles(t *testing.T) {
@@ -915,12 +1014,14 @@ dest = "`+destFile+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.List()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	s.List()
+
+	out := w.String()
 
 	assert.Contains(t, out, "Dotfiles:")
 	assert.Contains(t, out, "linked")
@@ -935,12 +1036,14 @@ source_dir = "/tmp"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.List()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	s.List()
+
+	out := w.String()
 
 	assert.NotContains(t, out, "Dotfiles:")
 }
@@ -949,9 +1052,10 @@ func TestList_PackagesUpgradeAvailable(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	execCommand = func(_ string, _ ...string) *exec.Cmd {
 		return exec.Command("echo", "-n", "install ok installed")
 	}
+
 	mockInstalledVersion(map[string]string{
 		"vim": "9.0.1",
 	})
@@ -965,12 +1069,14 @@ packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.List()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	s.List()
+
+	out := w.String()
 
 	assert.Contains(t, out, "upgrade: 9.0.2")
 }
@@ -979,9 +1085,10 @@ func TestList_UnknownPackage(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	execCommand = func(_ string, _ ...string) *exec.Cmd {
 		return exec.Command("false")
 	}
+
 	mockInstalledVersion(map[string]string{})
 	mockAvailableVersion(map[string]string{})
 
@@ -991,12 +1098,14 @@ packages = ["badpkg"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.List()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	s.List()
+
+	out := w.String()
 
 	assert.Contains(t, out, "unknown")
 }
@@ -1005,9 +1114,10 @@ func TestList_InstalledVersionUnknown(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	execCommand = func(_ string, _ ...string) *exec.Cmd {
 		return exec.Command("echo", "-n", "install ok installed")
 	}
+
 	mockInstalledVersion(map[string]string{})
 	mockAvailableVersion(map[string]string{
 		"vim": "9.0.1",
@@ -1019,12 +1129,14 @@ packages = ["vim"]
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.List()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	s.List()
+
+	out := w.String()
 
 	assert.Contains(t, out, "installed (version unknown)")
 }
@@ -1033,9 +1145,10 @@ func TestList_PackagesWithPackageSection(t *testing.T) {
 	saveMocks(t)
 	writeOsRelease(t, "ID=debian\n")
 
-	execCommand = func(name string, arg ...string) *exec.Cmd {
+	execCommand = func(_ string, _ ...string) *exec.Cmd {
 		return exec.Command("echo", "-n", "install ok installed")
 	}
+
 	mockInstalledVersion(map[string]string{
 		"vim":      "9.0.1",
 		"pipewire": "0.3.65",
@@ -1054,12 +1167,14 @@ name = "pipewire"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.List()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	s.List()
+
+	out := w.String()
 
 	assert.Contains(t, out, "pipewire")
 	assert.Contains(t, out, "vim")
@@ -1094,12 +1209,14 @@ dest = "`+tmuxDest+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.List()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	s.List()
+
+	out := w.String()
 
 	assert.Contains(t, out, "linked")
 	assert.Contains(t, out, "missing")
@@ -1129,12 +1246,14 @@ packages = []
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.List()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	s.List()
+
+	out := w.String()
 
 	assert.NotContains(t, out, "Packages:")
 }
@@ -1212,12 +1331,14 @@ dest = "`+missingDest+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.List()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	s.List()
+
+	out := w.String()
 
 	assert.Contains(t, out, "Dotfiles:")
 	assert.Contains(t, out, "linked")
@@ -1246,12 +1367,14 @@ dest = "`+filepath.Join(dir, ".vimrc")+`"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.List()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	s.List()
+
+	out := w.String()
 
 	assert.Contains(t, out, "error:")
 }
@@ -1262,17 +1385,17 @@ func TestApplyGit_ClonesMissing(t *testing.T) {
 	saveMocks(t)
 
 	remote := t.TempDir()
-	run(t, remote, "git", "init", "--bare")
+	run(t, remote, "init", "--bare")
 
 	scratch := t.TempDir()
-	run(t, scratch, "git", "clone", remote, "work")
+	run(t, scratch, "clone", remote, "work")
 	work := filepath.Join(scratch, "work")
-	run(t, work, "git", "config", "user.email", "test@test.com")
-	run(t, work, "git", "config", "user.name", "Test")
+	run(t, work, "config", "user.email", "test@test.com")
+	run(t, work, "config", "user.name", "Test")
 	require.NoError(t, os.WriteFile(filepath.Join(work, "README.md"), []byte("hello"), 0o644))
-	run(t, work, "git", "add", ".")
-	run(t, work, "git", "commit", "-m", "init")
-	run(t, work, "git", "push")
+	run(t, work, "add", ".")
+	run(t, work, "commit", "-m", "init")
+	run(t, work, "push")
 
 	dest := filepath.Join(t.TempDir(), "cloned")
 
@@ -1283,18 +1406,22 @@ dest = "%s"
 `, remote, dest))
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Apply()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "Checking 1 git repos")
 	assert.Contains(t, out, "Done!")
 
-	_, err := os.Stat(filepath.Join(dest, ".git"))
-	assert.NoError(t, err)
+	_, err = os.Stat(filepath.Join(dest, ".git"))
+	require.NoError(t, err)
+
 	data, _ := os.ReadFile(filepath.Join(dest, "README.md"))
 	assert.Equal(t, "hello", string(data))
 }
@@ -1303,20 +1430,20 @@ func TestApplyGit_SkipsExisting(t *testing.T) {
 	saveMocks(t)
 
 	remote := t.TempDir()
-	run(t, remote, "git", "init", "--bare")
+	run(t, remote, "init", "--bare")
 
 	scratch := t.TempDir()
-	run(t, scratch, "git", "clone", remote, "work")
+	run(t, scratch, "clone", remote, "work")
 	work := filepath.Join(scratch, "work")
-	run(t, work, "git", "config", "user.email", "test@test.com")
-	run(t, work, "git", "config", "user.name", "Test")
+	run(t, work, "config", "user.email", "test@test.com")
+	run(t, work, "config", "user.name", "Test")
 	require.NoError(t, os.WriteFile(filepath.Join(work, "README.md"), []byte("hello"), 0o644))
-	run(t, work, "git", "add", ".")
-	run(t, work, "git", "commit", "-m", "init")
-	run(t, work, "git", "push")
+	run(t, work, "add", ".")
+	run(t, work, "commit", "-m", "init")
+	run(t, work, "push")
 
 	dest := filepath.Join(t.TempDir(), "cloned")
-	run(t, filepath.Dir(dest), "git", "clone", remote, dest)
+	run(t, filepath.Dir(dest), "clone", remote, dest)
 
 	configPath := withTempConfig(t, fmt.Sprintf(`
 [[git]]
@@ -1325,12 +1452,15 @@ dest = "%s"
 `, remote, dest))
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Apply()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "Done!")
 	_ = out
@@ -1340,7 +1470,7 @@ func TestApplyGit_DryRun(t *testing.T) {
 	saveMocks(t)
 
 	remote := t.TempDir()
-	run(t, remote, "git", "init", "--bare")
+	run(t, remote, "init", "--bare")
 
 	dest := filepath.Join(t.TempDir(), "cloned")
 
@@ -1351,16 +1481,19 @@ dest = "%s"
 `, remote, dest))
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, true)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, true, &w)
+
+	err := s.Apply()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "[dry-run] Would clone")
 
-	_, err := os.Stat(dest)
+	_, err = os.Stat(dest)
 	assert.True(t, os.IsNotExist(err))
 }
 
@@ -1376,13 +1509,14 @@ dest = "%s"
 `, dest))
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	captureOutput(t, func() {
-		err := s.Apply()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not a git repository")
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Apply()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a git repository")
 }
 
 func TestApplyGit_DestIsFile(t *testing.T) {
@@ -1398,13 +1532,14 @@ dest = "%s"
 `, dest))
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	captureOutput(t, func() {
-		err := s.Apply()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "not a directory")
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Apply()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a directory")
 }
 
 // --- Git Update tests ---
@@ -1413,26 +1548,26 @@ func TestUpdateGit_PullsExisting(t *testing.T) {
 	saveMocks(t)
 
 	remote := t.TempDir()
-	run(t, remote, "git", "init", "--bare")
+	run(t, remote, "init", "--bare")
 
 	parent := t.TempDir()
 	dest := filepath.Join(parent, "repo")
-	run(t, parent, "git", "clone", remote, dest)
-	run(t, dest, "git", "config", "user.email", "test@test.com")
-	run(t, dest, "git", "config", "user.name", "Test")
+	run(t, parent, "clone", remote, dest)
+	run(t, dest, "config", "user.email", "test@test.com")
+	run(t, dest, "config", "user.name", "Test")
 	require.NoError(t, os.WriteFile(filepath.Join(dest, "file.txt"), []byte("initial"), 0o644))
-	run(t, dest, "git", "add", ".")
-	run(t, dest, "git", "commit", "-m", "initial")
-	run(t, dest, "git", "push", "-u", "origin", "HEAD")
+	run(t, dest, "add", ".")
+	run(t, dest, "commit", "-m", "initial")
+	run(t, dest, "push", "-u", "origin", "HEAD")
 
 	other := filepath.Join(parent, "other")
-	run(t, parent, "git", "clone", remote, other)
-	run(t, other, "git", "config", "user.email", "test@test.com")
-	run(t, other, "git", "config", "user.name", "Test")
+	run(t, parent, "clone", remote, other)
+	run(t, other, "config", "user.email", "test@test.com")
+	run(t, other, "config", "user.name", "Test")
 	require.NoError(t, os.WriteFile(filepath.Join(other, "new.txt"), []byte("new"), 0o644))
-	run(t, other, "git", "add", ".")
-	run(t, other, "git", "commit", "-m", "add new file")
-	run(t, other, "git", "push")
+	run(t, other, "add", ".")
+	run(t, other, "commit", "-m", "add new file")
+	run(t, other, "push")
 
 	configPath := withTempConfig(t, fmt.Sprintf(`
 [[git]]
@@ -1441,15 +1576,17 @@ dest = "%s"
 `, remote, dest))
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Update()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Update()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "Updating 1 git repos")
-	assert.Contains(t, out, "Done!")
 
 	data, err := os.ReadFile(filepath.Join(dest, "new.txt"))
 	require.NoError(t, err)
@@ -1468,31 +1605,34 @@ dest = "%s"
 `, dest))
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Update()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
 
-	assert.Contains(t, out, "not cloned, run settle apply first")
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Update()
+	require.NoError(t, err)
+
+	out := w.String()
+
+	assert.Contains(t, out, "not cloned, run settle first")
 }
 
 func TestUpdateGit_DryRun(t *testing.T) {
 	saveMocks(t)
 
 	remote := t.TempDir()
-	run(t, remote, "git", "init", "--bare")
+	run(t, remote, "init", "--bare")
 
 	parent := t.TempDir()
 	dest := filepath.Join(parent, "repo")
-	run(t, parent, "git", "clone", remote, dest)
-	run(t, dest, "git", "config", "user.email", "test@test.com")
-	run(t, dest, "git", "config", "user.name", "Test")
+	run(t, parent, "clone", remote, dest)
+	run(t, dest, "config", "user.email", "test@test.com")
+	run(t, dest, "config", "user.name", "Test")
 	require.NoError(t, os.WriteFile(filepath.Join(dest, "file.txt"), []byte("data"), 0o644))
-	run(t, dest, "git", "add", ".")
-	run(t, dest, "git", "commit", "-m", "init")
-	run(t, dest, "git", "push", "-u", "origin", "HEAD")
+	run(t, dest, "add", ".")
+	run(t, dest, "commit", "-m", "init")
+	run(t, dest, "push", "-u", "origin", "HEAD")
 
 	configPath := withTempConfig(t, fmt.Sprintf(`
 [[git]]
@@ -1501,12 +1641,15 @@ dest = "%s"
 `, remote, dest))
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, true)
 
-	out := captureOutput(t, func() {
-		err := s.Update()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, true, &w)
+
+	err := s.Update()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Contains(t, out, "[dry-run] Would pull")
 }
@@ -1517,11 +1660,11 @@ func TestListGit(t *testing.T) {
 	saveMocks(t)
 
 	remote := t.TempDir()
-	run(t, remote, "git", "init", "--bare")
+	run(t, remote, "init", "--bare")
 
 	parent := t.TempDir()
 	clonedDest := filepath.Join(parent, "cloned")
-	run(t, parent, "git", "clone", remote, clonedDest)
+	run(t, parent, "clone", remote, clonedDest)
 
 	missingDest := filepath.Join(parent, "missing")
 
@@ -1543,12 +1686,14 @@ dest = "%s"
 `, remote, clonedDest, missingDest, notRepoDest))
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.List()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	s.List()
+
+	out := w.String()
 
 	assert.Contains(t, out, "Git Repos:")
 	assert.Contains(t, out, "cloned")
@@ -1566,7 +1711,7 @@ func TestApplyGo_SkipsExisting(t *testing.T) {
 
 	GoBinPath = func() (string, error) { return binDir, nil }
 	installCalled := false
-	GoInstall = func(path, version string, verbose bool) error {
+	GoInstall = func(_, _ string, _ bool) error {
 		installCalled = true
 		return nil
 	}
@@ -1578,12 +1723,15 @@ version = "v2.9.0"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.applyGo()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.applyGo()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.False(t, installCalled)
 	assert.Contains(t, out, "1 packages already installed")
@@ -1596,7 +1744,8 @@ func TestApplyGo_InstallsMissing(t *testing.T) {
 	GoBinPath = func() (string, error) { return binDir, nil }
 
 	var installedPkg string
-	GoInstall = func(path, version string, verbose bool) error {
+
+	GoInstall = func(path, _ string, _ bool) error {
 		installedPkg = path
 		return nil
 	}
@@ -1607,12 +1756,15 @@ path = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
 version = "v2.9.0"
 `)
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.applyGo()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.applyGo()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.Equal(t, "github.com/golangci/golangci-lint/v2/cmd/golangci-lint", installedPkg)
 	assert.Contains(t, out, "golangci-lint")
@@ -1626,7 +1778,7 @@ func TestApplyGo_DryRun(t *testing.T) {
 	GoBinPath = func() (string, error) { return binDir, nil }
 
 	installCalled := false
-	GoInstall = func(path, version string, verbose bool) error {
+	GoInstall = func(_, _ string, _ bool) error {
 		installCalled = true
 		return nil
 	}
@@ -1637,12 +1789,15 @@ path = "github.com/golangci/golangci-lint/v2/cmd/golangci-lint"
 version = "v2.9.0"
 `)
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, true)
 
-	out := captureOutput(t, func() {
-		err := s.applyGo()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, true, &w)
+
+	err := s.applyGo()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.False(t, installCalled)
 	assert.Contains(t, out, "[dry-run]")
@@ -1654,7 +1809,7 @@ func TestApplyGo_InstallError(t *testing.T) {
 
 	binDir := t.TempDir()
 	GoBinPath = func() (string, error) { return binDir, nil }
-	GoInstall = func(path, version string, verbose bool) error {
+	GoInstall = func(_, _ string, _ bool) error {
 		return fmt.Errorf("network error")
 	}
 
@@ -1664,13 +1819,14 @@ path = "github.com/user/tool"
 version = "v1.0.0"
 `)
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	captureOutput(t, func() {
-		err := s.applyGo()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to install")
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.applyGo()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to install")
 }
 
 func TestApplyGo_BinPathError(t *testing.T) {
@@ -1684,20 +1840,22 @@ path = "github.com/user/tool"
 version = "v1.0.0"
 `)
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	captureOutput(t, func() {
-		err := s.applyGo()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "cannot determine Go bin path")
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.applyGo()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot determine Go bin path")
 }
 
 func TestUpdateGo(t *testing.T) {
 	saveMocks(t)
 
 	var installed []string
-	GoInstall = func(path, version string, verbose bool) error {
+
+	GoInstall = func(path, version string, _ bool) error {
 		installed = append(installed, path+"@"+version)
 		return nil
 	}
@@ -1712,14 +1870,17 @@ path = "golang.org/x/tools/cmd/goimports"
 version = "v0.25.0"
 `)
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.updateGo()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
 
-	assert.Equal(t, 2, len(installed))
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.updateGo()
+	require.NoError(t, err)
+
+	out := w.String()
+
+	assert.Len(t, installed, 2)
 	assert.Contains(t, out, "Updating 2 go packages")
 }
 
@@ -1727,7 +1888,7 @@ func TestUpdateGo_DryRun(t *testing.T) {
 	saveMocks(t)
 
 	installCalled := false
-	GoInstall = func(path, version string, verbose bool) error {
+	GoInstall = func(_, _ string, _ bool) error {
 		installCalled = true
 		return nil
 	}
@@ -1738,12 +1899,15 @@ path = "github.com/user/tool"
 version = "v1.0.0"
 `)
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, true)
 
-	out := captureOutput(t, func() {
-		err := s.updateGo()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, true, &w)
+
+	err := s.updateGo()
+	require.NoError(t, err)
+
+	out := w.String()
 
 	assert.False(t, installCalled)
 	assert.Contains(t, out, "[dry-run]")
@@ -1752,7 +1916,7 @@ version = "v1.0.0"
 func TestUpdateGo_Error(t *testing.T) {
 	saveMocks(t)
 
-	GoInstall = func(path, version string, verbose bool) error {
+	GoInstall = func(_, _ string, _ bool) error {
 		return fmt.Errorf("failed")
 	}
 
@@ -1762,13 +1926,14 @@ path = "github.com/user/tool"
 version = "v1.0.0"
 `)
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	captureOutput(t, func() {
-		err := s.updateGo()
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to update")
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.updateGo()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to update")
 }
 
 func TestListGo(t *testing.T) {
@@ -1790,11 +1955,14 @@ version = "v0.25.0"
 `)
 
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		s.listGo()
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	s.listGo()
+
+	out := w.String()
 
 	assert.Contains(t, out, "Go Packages:")
 	assert.Contains(t, out, "golangci-lint")
@@ -1814,11 +1982,14 @@ path = "github.com/user/tool"
 version = "v1.0.0"
 `)
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		s.listGo()
-	})
+	var w strings.Builder
+
+	s := NewSettle(cfg, false, false, &w)
+
+	s.listGo()
+
+	out := w.String()
 
 	assert.Contains(t, out, "Warning: cannot determine Go bin path")
 }
@@ -1830,7 +2001,8 @@ func TestApply_GoPackages(t *testing.T) {
 	GoBinPath = func() (string, error) { return binDir, nil }
 
 	var installed []string
-	GoInstall = func(path, version string, verbose bool) error {
+
+	GoInstall = func(path, _ string, _ bool) error {
 		installed = append(installed, path)
 		return nil
 	}
@@ -1841,13 +2013,16 @@ path = "github.com/user/tool"
 version = "v1.0.0"
 `)
 	cfg, _ := loadConfig(configPath)
-	s := NewSettle(cfg, false, false)
 
-	out := captureOutput(t, func() {
-		err := s.Apply()
-		require.NoError(t, err)
-	})
+	var w strings.Builder
 
-	assert.Equal(t, 1, len(installed))
+	s := NewSettle(cfg, false, false, &w)
+
+	err := s.Apply()
+	require.NoError(t, err)
+
+	out := w.String()
+
+	assert.Len(t, installed, 1)
 	assert.Contains(t, out, "Done!")
 }

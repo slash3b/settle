@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/fatih/color"
@@ -21,13 +22,14 @@ type PackageStatus struct {
 
 // PrintPackageTable prints an ASCII table of packages and their statuses
 // Only shows packages that were installed, with a summary for already-installed packages
-func PrintPackageTable(packages []PackageStatus) {
+func PrintPackageTable(w io.Writer, packages []PackageStatus) {
 	if len(packages) == 0 {
 		return
 	}
 
 	// Separate packages by status
 	var installed []PackageStatus
+
 	skippedCount := 0
 
 	for _, pkg := range packages {
@@ -39,11 +41,11 @@ func PrintPackageTable(packages []PackageStatus) {
 		}
 	}
 
-	fmt.Println()
+	_, _ = fmt.Fprintln(w)
 
 	// Print summary for already-installed packages
 	if skippedCount > 0 {
-		fmt.Printf("%d packages already installed (out of %d total)\n", skippedCount, len(packages))
+		_, _ = fmt.Fprintf(w, "%d packages already installed (out of %d total)\n", skippedCount, len(packages))
 	}
 
 	// Print table only for newly installed packages
@@ -61,17 +63,17 @@ func PrintPackageTable(packages []PackageStatus) {
 		statusWidth := len("installed") + 2
 
 		// Print header
-		fmt.Println()
-		fmt.Printf("%-*s | %s\n", nameWidth, "Package", "Status")
-		fmt.Printf("%s-+-%s\n", strings.Repeat("-", nameWidth), strings.Repeat("-", statusWidth))
+		_, _ = fmt.Fprintln(w)
+		_, _ = fmt.Fprintf(w, "%-*s | %s\n", nameWidth, "Package", "Status")
+		_, _ = fmt.Fprintf(w, "%s-+-%s\n", strings.Repeat("-", nameWidth), strings.Repeat("-", statusWidth))
 
 		// Print rows
 		for _, pkg := range installed {
-			fmt.Printf("%-*s | %s\n", nameWidth, pkg.Name, pkg.Status)
+			_, _ = fmt.Fprintf(w, "%-*s | %s\n", nameWidth, pkg.Name, pkg.Status)
 		}
 	}
 
-	fmt.Println()
+	_, _ = fmt.Fprintln(w)
 }
 
 // ListItem represents an item in the list table
@@ -82,18 +84,20 @@ type ListItem struct {
 }
 
 // PrintListTable prints a formatted table for list command
-func PrintListTable(title string, items []ListItem) {
+func PrintListTable(w io.Writer, title string, items []ListItem) {
 	if len(items) == 0 {
 		return
 	}
 
 	// Find max widths
 	maxNameLen := len("Name")
+
 	maxStatusLen := len("Status")
 	for _, item := range items {
 		if len(item.Name) > maxNameLen {
 			maxNameLen = len(item.Name)
 		}
+
 		if len(item.Status) > maxStatusLen {
 			maxStatusLen = len(item.Status)
 		}
@@ -103,16 +107,16 @@ func PrintListTable(title string, items []ListItem) {
 	statusWidth := maxStatusLen + 2
 
 	// Print title
-	fmt.Printf("\n%s:\n", title)
-	fmt.Printf("%-*s | %s\n", nameWidth, "Name", "Status")
-	fmt.Printf("%s-+-%s\n", strings.Repeat("-", nameWidth), strings.Repeat("-", statusWidth))
+	_, _ = fmt.Fprintf(w, "\n%s:\n", title)
+	_, _ = fmt.Fprintf(w, "%-*s | %s\n", nameWidth, "Name", "Status")
+	_, _ = fmt.Fprintf(w, "%s-+-%s\n", strings.Repeat("-", nameWidth), strings.Repeat("-", statusWidth))
 
 	// Print rows
 	for _, item := range items {
 		if item.Color != nil {
-			fmt.Printf("%-*s | %s\n", nameWidth, item.Name, item.Color.Sprint(item.Status))
+			_, _ = fmt.Fprintf(w, "%-*s | %s\n", nameWidth, item.Name, item.Color.Sprint(item.Status))
 		} else {
-			fmt.Printf("%-*s | %s\n", nameWidth, item.Name, item.Status)
+			_, _ = fmt.Fprintf(w, "%-*s | %s\n", nameWidth, item.Name, item.Status)
 		}
 	}
 }

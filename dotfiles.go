@@ -21,13 +21,15 @@ const (
 type DotfilesManager struct {
 	sourceDir string
 	verbose   bool
+	w         io.Writer
 }
 
 // NewDotfilesManager creates a new dotfiles manager
-func NewDotfilesManager(sourceDir string, verbose bool) *DotfilesManager {
+func NewDotfilesManager(sourceDir string, verbose bool, w io.Writer) *DotfilesManager {
 	return &DotfilesManager{
 		sourceDir: expandPath(sourceDir),
 		verbose:   verbose,
+		w:         w,
 	}
 }
 
@@ -50,7 +52,8 @@ func (d *DotfilesManager) CheckLink(link Dotfile) (LinkStatus, error) {
 	dest := expandPath(link.Dest)
 
 	// Check if source exists
-	if _, err := os.Stat(src); os.IsNotExist(err) {
+	_, err := os.Stat(src)
+	if os.IsNotExist(err) {
 		return LinkMissing, fmt.Errorf("source file does not exist: %s", src)
 	}
 
@@ -59,6 +62,7 @@ func (d *DotfilesManager) CheckLink(link Dotfile) (LinkStatus, error) {
 	if os.IsNotExist(err) {
 		return LinkMissing, nil
 	}
+
 	if err != nil {
 		return LinkMissing, err
 	}
@@ -74,11 +78,14 @@ func (d *DotfilesManager) CheckLink(link Dotfile) (LinkStatus, error) {
 			if err != nil {
 				return CopyOutdated, err
 			}
+
 			if equal {
 				return CopyCorrect, nil
 			}
+
 			return CopyOutdated, nil
 		}
+
 		return CopyOutdated, nil
 	}
 
@@ -90,9 +97,11 @@ func (d *DotfilesManager) CheckLink(link Dotfile) (LinkStatus, error) {
 		if err != nil {
 			return LinkIncorrect, err
 		}
+
 		if target == src {
 			return LinkCorrect, nil
 		}
+
 		return LinkIncorrect, nil
 	}
 
@@ -100,6 +109,7 @@ func (d *DotfilesManager) CheckLink(link Dotfile) (LinkStatus, error) {
 	if info.IsDir() {
 		return LinkIsDir, nil
 	}
+
 	return LinkIsFile, nil
 }
 
@@ -120,19 +130,22 @@ func (d *DotfilesManager) Apply(link Dotfile, dryRun bool) (bool, error) {
 	} else {
 		changed, err = d.applyLink(src, dest, status, dryRun, link.Sudo)
 	}
+
 	if err != nil {
 		return false, err
 	}
 
 	if link.Executable && !dryRun {
 		if link.Sudo {
-			if err := runSudo("chmod", "755", dest); err != nil {
+			err = runSudo("chmod", "755", dest)
+			if err != nil {
 				return false, fmt.Errorf("failed to set executable: %w", err)
 			}
 		} else {
 			// os.Chmod follows symlinks, so this correctly chmods the source
 			// in link mode and the copied file in copy mode.
-			if err := os.Chmod(dest, 0o755); err != nil {
+			err = os.Chmod(dest, 0o755) //nolint:gosec // executable bit is intentional
+			if err != nil {
 				return false, fmt.Errorf("failed to set executable: %w", err)
 			}
 		}
@@ -144,14 +157,19 @@ func (d *DotfilesManager) Apply(link Dotfile, dryRun bool) (bool, error) {
 // runSudo executes a command with sudo, returning a descriptive error on failure.
 func runSudo(args ...string) error {
 	var stderr bytes.Buffer
+
 	cmd := execCommand("sudo", args...)
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+
+	err := cmd.Run()
+	if err != nil {
 		if stderr.Len() > 0 {
 			return fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
 		}
+
 		return err
 	}
+
 	return nil
 }
 
@@ -165,72 +183,99 @@ func (d *DotfilesManager) applyLink(src, dest string, status LinkStatus, dryRun,
 		if dryRun {
 			return true, nil
 		}
+
 		if sudo {
-			if err := runSudo("mkdir", "-p", filepath.Dir(dest)); err != nil {
+			err := runSudo("mkdir", "-p", filepath.Dir(dest))
+			if err != nil {
 				return false, fmt.Errorf("failed to create directory: %w", err)
 			}
-			if err := runSudo("ln", "-sf", src, dest); err != nil {
+
+			err = runSudo("ln", "-sf", src, dest)
+			if err != nil {
 				return false, fmt.Errorf("failed to create symlink: %w", err)
 			}
 		} else {
-			if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+			err := os.MkdirAll(filepath.Dir(dest), 0o755) //nolint:gosec // 0755 is standard for directories
+			if err != nil {
 				return false, fmt.Errorf("failed to create directory: %w", err)
 			}
-			if err := os.Symlink(src, dest); err != nil {
+
+			err = os.Symlink(src, dest)
+			if err != nil {
 				return false, fmt.Errorf("failed to create symlink: %w", err)
 			}
 		}
+
 		return true, nil
 
 	case LinkIncorrect:
 		if dryRun {
 			return true, nil
 		}
+
 		if sudo {
 			// ln -sf atomically replaces the existing symlink
-			if err := runSudo("ln", "-sf", src, dest); err != nil {
+			err := runSudo("ln", "-sf", src, dest)
+			if err != nil {
 				return false, fmt.Errorf("failed to create symlink: %w", err)
 			}
 		} else {
-			if err := os.Remove(dest); err != nil {
+			err := os.Remove(dest)
+			if err != nil {
 				return false, fmt.Errorf("failed to remove old symlink: %w", err)
 			}
-			if err := os.Symlink(src, dest); err != nil {
+
+			err = os.Symlink(src, dest)
+			if err != nil {
 				return false, fmt.Errorf("failed to create symlink: %w", err)
 			}
 		}
+
 		return true, nil
 
 	case LinkIsFile:
 		if dryRun {
 			return true, nil
 		}
+
 		backupPath := dest + ".backup"
 		if sudo {
-			if err := runSudo("mv", dest, backupPath); err != nil {
+			err := runSudo("mv", dest, backupPath)
+			if err != nil {
 				return false, fmt.Errorf("failed to backup existing file: %w", err)
 			}
+
 			if d.verbose {
-				fmt.Printf("  backed up %s -> %s\n", dest, backupPath)
+				_, _ = fmt.Fprintf(d.w, "  backed up %s -> %s\n", dest, backupPath)
 			}
-			if err := runSudo("ln", "-sf", src, dest); err != nil {
+
+			err = runSudo("ln", "-sf", src, dest)
+			if err != nil {
 				return false, fmt.Errorf("failed to create symlink: %w", err)
 			}
 		} else {
-			if err := os.Rename(dest, backupPath); err != nil {
+			err := os.Rename(dest, backupPath)
+			if err != nil {
 				return false, fmt.Errorf("failed to backup existing file: %w", err)
 			}
+
 			if d.verbose {
-				fmt.Printf("  backed up %s -> %s\n", dest, backupPath)
+				_, _ = fmt.Fprintf(d.w, "  backed up %s -> %s\n", dest, backupPath)
 			}
-			if err := os.Symlink(src, dest); err != nil {
+
+			err = os.Symlink(src, dest)
+			if err != nil {
 				return false, fmt.Errorf("failed to create symlink: %w", err)
 			}
 		}
+
 		return true, nil
 
 	case LinkIsDir:
 		return false, fmt.Errorf("directory exists at destination: %s", dest)
+
+	case CopyCorrect, CopyOutdated:
+		// not reachable in link mode
 	}
 
 	return false, nil
@@ -246,40 +291,55 @@ func (d *DotfilesManager) applyCopy(src, dest string, status LinkStatus, dryRun,
 		if dryRun {
 			return true, nil
 		}
+
 		if sudo {
-			if err := runSudo("mkdir", "-p", filepath.Dir(dest)); err != nil {
+			err := runSudo("mkdir", "-p", filepath.Dir(dest))
+			if err != nil {
 				return false, fmt.Errorf("failed to create directory: %w", err)
 			}
-			if err := runSudo("cp", src, dest); err != nil {
+
+			err = runSudo("cp", src, dest)
+			if err != nil {
 				return false, fmt.Errorf("failed to copy file: %w", err)
 			}
 		} else {
-			if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+			err := os.MkdirAll(filepath.Dir(dest), 0o755) //nolint:gosec // 0755 is standard for directories
+			if err != nil {
 				return false, fmt.Errorf("failed to create directory: %w", err)
 			}
-			if err := copyFile(src, dest); err != nil {
+
+			err = copyFile(src, dest)
+			if err != nil {
 				return false, fmt.Errorf("failed to copy file: %w", err)
 			}
 		}
+
 		return true, nil
 
 	case CopyOutdated:
 		if dryRun {
 			return true, nil
 		}
+
 		if sudo {
-			if err := runSudo("cp", src, dest); err != nil {
+			err := runSudo("cp", src, dest)
+			if err != nil {
 				return false, fmt.Errorf("failed to update copy: %w", err)
 			}
 		} else {
-			if err := copyFile(src, dest); err != nil {
+			err := copyFile(src, dest)
+			if err != nil {
 				return false, fmt.Errorf("failed to update copy: %w", err)
 			}
 		}
+
 		return true, nil
 
 	case LinkIsDir:
 		return false, fmt.Errorf("directory exists at destination: %s", dest)
+
+	case LinkCorrect, LinkIncorrect, LinkIsFile:
+		// not reachable in copy mode
 	}
 
 	return false, nil
@@ -305,25 +365,34 @@ func (d *DotfilesManager) ApplyDir(dir DotfileDir, dryRun bool) (bool, error) {
 		if dryRun {
 			return true, nil
 		}
+
 		backupPath := dest + ".backup"
 		if dir.Sudo {
-			if err := runSudo("mv", dest, backupPath); err != nil {
+			err = runSudo("mv", dest, backupPath)
+			if err != nil {
 				return false, fmt.Errorf("failed to backup existing directory: %w", err)
 			}
-			if err := runSudo("ln", "-sf", src, dest); err != nil {
+
+			err = runSudo("ln", "-sf", src, dest)
+			if err != nil {
 				return false, fmt.Errorf("failed to create symlink: %w", err)
 			}
 		} else {
-			if err := os.Rename(dest, backupPath); err != nil {
+			err = os.Rename(dest, backupPath)
+			if err != nil {
 				return false, fmt.Errorf("failed to backup existing directory: %w", err)
 			}
-			if err := os.Symlink(src, dest); err != nil {
+
+			err = os.Symlink(src, dest)
+			if err != nil {
 				return false, fmt.Errorf("failed to create symlink: %w", err)
 			}
 		}
+
 		if d.verbose {
-			fmt.Printf("  backed up %s -> %s\n", dest, backupPath)
+			_, _ = fmt.Fprintf(d.w, "  backed up %s -> %s\n", dest, backupPath)
 		}
+
 		return true, nil
 	}
 
@@ -346,12 +415,12 @@ func expandPath(path string) string {
 
 // filesEqual compares two files and returns true if they have identical content
 func filesEqual(path1, path2 string) (bool, error) {
-	f1, err := os.ReadFile(path1)
+	f1, err := os.ReadFile(path1) //nolint:gosec // paths are internal dotfile sources
 	if err != nil {
 		return false, err
 	}
 
-	f2, err := os.ReadFile(path2)
+	f2, err := os.ReadFile(path2) //nolint:gosec // paths are internal dotfile sources
 	if err != nil {
 		return false, err
 	}
@@ -361,7 +430,7 @@ func filesEqual(path1, path2 string) (bool, error) {
 
 // copyFile copies a file from src to dest
 func copyFile(src, dest string) error {
-	srcFile, err := os.Open(src)
+	srcFile, err := os.Open(src) //nolint:gosec // paths are internal dotfile sources
 	if err != nil {
 		return err
 	}
@@ -373,7 +442,7 @@ func copyFile(src, dest string) error {
 		return err
 	}
 
-	destFile, err := os.OpenFile(dest, os.O_RDWR|os.O_CREATE|os.O_TRUNC, srcInfo.Mode())
+	destFile, err := os.OpenFile(dest, os.O_RDWR|os.O_CREATE|os.O_TRUNC, srcInfo.Mode()) //nolint:gosec // paths are internal dotfile sources
 	if err != nil {
 		return err
 	}

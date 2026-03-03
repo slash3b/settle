@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/fatih/color"
@@ -8,10 +9,9 @@ import (
 )
 
 func TestPrintPackageTable_Empty(t *testing.T) {
-	out := captureOutput(t, func() {
-		PrintPackageTable(nil)
-	})
-	assert.Equal(t, "", out)
+	var w strings.Builder
+	PrintPackageTable(&w, nil)
+	assert.Empty(t, w.String())
 }
 
 func TestPrintPackageTable_Installed(t *testing.T) {
@@ -19,9 +19,10 @@ func TestPrintPackageTable_Installed(t *testing.T) {
 		{Name: "vim", Status: StatusInstalled},
 		{Name: "curl", Status: StatusInstalled},
 	}
-	out := captureOutput(t, func() {
-		PrintPackageTable(pkgs)
-	})
+
+	var w strings.Builder
+	PrintPackageTable(&w, pkgs)
+	out := w.String()
 
 	assert.Contains(t, out, "Package")
 	assert.Contains(t, out, "Status")
@@ -35,9 +36,10 @@ func TestPrintPackageTable_AllSkipped(t *testing.T) {
 		{Name: "vim", Status: StatusSkipped},
 		{Name: "curl", Status: StatusSkipped},
 	}
-	out := captureOutput(t, func() {
-		PrintPackageTable(pkgs)
-	})
+
+	var w strings.Builder
+	PrintPackageTable(&w, pkgs)
+	out := w.String()
 
 	assert.Contains(t, out, "2 packages already installed")
 	// Should NOT have the table header since no installed packages
@@ -50,9 +52,10 @@ func TestPrintPackageTable_Mixed(t *testing.T) {
 		{Name: "curl", Status: StatusSkipped},
 		{Name: "git", Status: StatusSkipped},
 	}
-	out := captureOutput(t, func() {
-		PrintPackageTable(pkgs)
-	})
+
+	var w strings.Builder
+	PrintPackageTable(&w, pkgs)
+	out := w.String()
 
 	assert.Contains(t, out, "2 packages already installed")
 	assert.Contains(t, out, "vim")
@@ -63,19 +66,19 @@ func TestPrintPackageTable_Pinned(t *testing.T) {
 	pkgs := []PackageStatus{
 		{Name: "vim", Status: StatusPinned},
 	}
-	out := captureOutput(t, func() {
-		PrintPackageTable(pkgs)
-	})
+
+	var w strings.Builder
+	PrintPackageTable(&w, pkgs)
+	out := w.String()
 
 	assert.Contains(t, out, "vim")
 	assert.Contains(t, out, "pinned")
 }
 
 func TestPrintListTable_Empty(t *testing.T) {
-	out := captureOutput(t, func() {
-		PrintListTable("Packages", nil)
-	})
-	assert.Equal(t, "", out)
+	var w strings.Builder
+	PrintListTable(&w, "Packages", nil)
+	assert.Empty(t, w.String())
 }
 
 func TestPrintListTable_Items(t *testing.T) {
@@ -83,9 +86,10 @@ func TestPrintListTable_Items(t *testing.T) {
 		{Name: "vim", Status: "9.0.1"},
 		{Name: "curl", Status: "missing"},
 	}
-	out := captureOutput(t, func() {
-		PrintListTable("Packages", items)
-	})
+
+	var w strings.Builder
+	PrintListTable(&w, "Packages", items)
+	out := w.String()
 
 	assert.Contains(t, out, "Packages:")
 	assert.Contains(t, out, "Name")
@@ -99,6 +103,7 @@ func TestPrintListTable_Items(t *testing.T) {
 func TestPrintListTable_WithColor(t *testing.T) {
 	// Disable color for testing
 	color.NoColor = true
+
 	defer func() { color.NoColor = false }()
 
 	red := color.New(color.FgRed)
@@ -106,9 +111,10 @@ func TestPrintListTable_WithColor(t *testing.T) {
 		{Name: "vim", Status: "missing", Color: red},
 		{Name: "curl", Status: "9.0.1"},
 	}
-	out := captureOutput(t, func() {
-		PrintListTable("Test", items)
-	})
+
+	var w strings.Builder
+	PrintListTable(&w, "Test", items)
+	out := w.String()
 
 	assert.Contains(t, out, "vim")
 	assert.Contains(t, out, "missing")
