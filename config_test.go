@@ -16,7 +16,7 @@ packages = ["vim", "curl", "git"]
 	require.NoError(t, err)
 	require.NotNil(t, cfg.Apt)
 
-	assert.Equal(t, 3, len(cfg.Apt.Packages))
+	assert.Len(t, cfg.Apt.Packages, 3)
 	assert.Equal(t, "vim", cfg.Apt.Packages[0])
 	assert.Equal(t, "curl", cfg.Apt.Packages[1])
 	assert.Equal(t, "git", cfg.Apt.Packages[2])
@@ -41,10 +41,10 @@ mode = "copy"
 	require.NotNil(t, cfg.Dotfiles)
 
 	assert.Equal(t, "~/dotfiles/sources", cfg.Dotfiles.SourceDir)
-	assert.Equal(t, 2, len(cfg.Dotfiles.Files))
+	assert.Len(t, cfg.Dotfiles.Files, 2)
 	assert.Equal(t, "alacritty.toml", cfg.Dotfiles.Files[0].Src)
 	assert.Equal(t, "~/.config/alacritty/alacritty.toml", cfg.Dotfiles.Files[0].Dest)
-	assert.Equal(t, "", cfg.Dotfiles.Files[0].Mode)
+	assert.Empty(t, cfg.Dotfiles.Files[0].Mode)
 	assert.Equal(t, "copy", cfg.Dotfiles.Files[1].Mode)
 }
 
@@ -85,7 +85,7 @@ dest = "~/.vimrc"
 	require.NoError(t, err)
 	require.NotNil(t, cfg.Dotfiles)
 
-	assert.Equal(t, 2, len(cfg.Dotfiles.Files))
+	assert.Len(t, cfg.Dotfiles.Files, 2)
 	assert.True(t, cfg.Dotfiles.Files[0].Sudo)
 	assert.False(t, cfg.Dotfiles.Files[1].Sudo)
 }
@@ -108,7 +108,7 @@ dest = "~/.vimrc"
 	require.NoError(t, err)
 	require.NotNil(t, cfg.Dotfiles)
 
-	assert.Equal(t, 2, len(cfg.Dotfiles.Files))
+	assert.Len(t, cfg.Dotfiles.Files, 2)
 	assert.True(t, cfg.Dotfiles.Files[0].Executable)
 	assert.False(t, cfg.Dotfiles.Files[1].Executable)
 }
@@ -126,8 +126,8 @@ post_install = "systemctl --user --now enable wireplumber.service"
 	require.NoError(t, err)
 	require.NotNil(t, cfg.Apt)
 
-	assert.Equal(t, 1, len(cfg.Apt.Packages))
-	assert.Equal(t, 1, len(cfg.Apt.PostHooks))
+	assert.Len(t, cfg.Apt.Packages, 1)
+	assert.Len(t, cfg.Apt.PostHooks, 1)
 	assert.Equal(t, "pipewire", cfg.Apt.PostHooks[0].Name)
 	assert.Equal(t, "systemctl --user --now enable wireplumber.service", cfg.Apt.PostHooks[0].PostInstall)
 }
@@ -177,9 +177,9 @@ dest = "~/.vimrc"
 	require.NotNil(t, cfg.Apt)
 	require.NotNil(t, cfg.Dotfiles)
 
-	assert.Equal(t, 2, len(cfg.Apt.Packages))
-	assert.Equal(t, 1, len(cfg.Apt.PostHooks))
-	assert.Equal(t, 1, len(cfg.Dotfiles.Files))
+	assert.Len(t, cfg.Apt.Packages, 2)
+	assert.Len(t, cfg.Apt.PostHooks, 1)
+	assert.Len(t, cfg.Dotfiles.Files, 1)
 }
 
 func TestLoadConfig_ValidGit(t *testing.T) {
@@ -195,7 +195,7 @@ dest = "~/projects/repo"
 	cfg, err := loadConfig(path)
 	require.NoError(t, err)
 
-	assert.Equal(t, 2, len(cfg.Git))
+	assert.Len(t, cfg.Git, 2)
 	assert.Equal(t, "https://github.com/tmux-plugins/tpm", cfg.Git[0].URL)
 	assert.Equal(t, "~/.tmux/plugins/tpm", cfg.Git[0].Dest)
 	assert.Equal(t, "https://github.com/user/repo", cfg.Git[1].URL)
@@ -210,7 +210,7 @@ packages = ["vim"]
 	cfg, err := loadConfig(path)
 	require.NoError(t, err)
 
-	assert.Equal(t, 0, len(cfg.Git))
+	assert.Empty(t, cfg.Git)
 }
 
 func TestLoadConfig_ValidGo(t *testing.T) {
@@ -226,7 +226,7 @@ version = "v0.25.0"
 	cfg, err := loadConfig(path)
 	require.NoError(t, err)
 
-	assert.Equal(t, 2, len(cfg.Go))
+	assert.Len(t, cfg.Go, 2)
 	assert.Equal(t, "github.com/golangci/golangci-lint/v2/cmd/golangci-lint", cfg.Go[0].Path)
 	assert.Equal(t, "v2.9.0", cfg.Go[0].Version)
 	assert.Equal(t, "golang.org/x/tools/cmd/goimports", cfg.Go[1].Path)
@@ -241,5 +241,5 @@ packages = ["vim"]
 	cfg, err := loadConfig(path)
 	require.NoError(t, err)
 
-	assert.Equal(t, 0, len(cfg.Go))
+	assert.Empty(t, cfg.Go)
 }

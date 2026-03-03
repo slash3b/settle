@@ -31,7 +31,9 @@ func TestIsGoPackageInstalled_Exists(t *testing.T) {
 
 	// Create a fake binary
 	binPath := filepath.Join(dir, "mytool")
-	if err := os.WriteFile(binPath, []byte("fake"), 0o755); err != nil {
+
+	err := os.WriteFile(binPath, []byte("fake"), 0o755) //nolint:gosec
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -48,7 +50,9 @@ func TestIsGoPackageInstalled_IsDirectory(t *testing.T) {
 
 	// Create a directory with the binary name
 	dirPath := filepath.Join(dir, "mytool")
-	if err := os.Mkdir(dirPath, 0o755); err != nil {
+
+	err := os.Mkdir(dirPath, 0o755) //nolint:gosec
+	if err != nil {
 		t.Fatal(err)
 	}
 

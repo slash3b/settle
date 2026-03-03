@@ -30,6 +30,7 @@ func main() {
 	usage := printUsage(os.Stdout)
 
 	flag.Usage = usage
+
 	flag.Parse()
 
 	// so we handle --version, -version and version variants.
@@ -81,12 +82,7 @@ func main() {
 
 	switch args[0] {
 	case "list":
-		err := settle.List()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-
-			os.Exit(1)
-		}
+		settle.List()
 	case "update":
 		err := settle.Update()
 		if err != nil {
@@ -109,13 +105,13 @@ func printVersion(w io.Writer) {
 		exe = "unknown"
 	}
 
-	fmt.Fprintf(w, "%-9s %s\n", "version", version)
+	fmt.Fprintf(w, "%-9s %s\n", "version", version) //nolint:errcheck
 
 	if buildTime != "" {
-		fmt.Fprintf(w, "%-9s %s\n", "built", buildTime)
+		fmt.Fprintf(w, "%-9s %s\n", "built", buildTime) //nolint:errcheck
 	}
 
-	fmt.Fprintf(w, "%-9s %s\n", "binary", exe)
+	fmt.Fprintf(w, "%-9s %s\n", "binary", exe) //nolint:errcheck
 }
 
 // an extension on top of flag default help message.
@@ -123,7 +119,7 @@ func printUsage(w io.Writer) func() {
 	flag.CommandLine.SetOutput(w)
 
 	return func() {
-		fmt.Fprintf(w, `Usage: settle [flags] [command]
+		_, _ = fmt.Fprintf(w, `Usage: settle [flags] [command]
 
 Running settle with no command syncs your system to match config.toml.
 
@@ -133,6 +129,7 @@ Commands:
     version  Show version information
 Flags:
 `)
+
 		flag.PrintDefaults()
 	}
 }

@@ -22,13 +22,15 @@ func NewDebianManager(verbose bool) *DebianManager {
 }
 
 // IsInstalled checks if a package is installed using dpkg-query
-func (d *DebianManager) IsInstalled(packageName string) (bool, error) {
+func (d *DebianManager) IsInstalled(packageName string) bool {
 	cmd := execCommand("dpkg-query", "-W", "-f=${Status}", packageName)
+
 	output, err := cmd.Output()
 	if err != nil {
-		return false, nil
+		return false
 	}
-	return string(output) == "install ok installed", nil
+
+	return string(output) == "install ok installed"
 }
 
 type packageCheckResult struct {
@@ -38,12 +40,13 @@ type packageCheckResult struct {
 
 // CheckInstalled concurrently checks which packages from the list are not installed.
 // Returns a list of package names that need to be installed.
-func (d *DebianManager) CheckInstalled(packages []string) ([]string, error) {
+func (d *DebianManager) CheckInstalled(packages []string) []string {
 	if len(packages) == 0 {
-		return nil, nil
+		return nil
 	}
 
 	const maxWorkers = 20
+
 	workers := min(len(packages), maxWorkers)
 
 	jobs := make(chan string, len(packages))
@@ -52,8 +55,7 @@ func (d *DebianManager) CheckInstalled(packages []string) ([]string, error) {
 	for range workers {
 		go func() {
 			for pkg := range jobs {
-				installed, _ := d.IsInstalled(pkg)
-				results <- packageCheckResult{name: pkg, isInstalled: installed}
+				results <- packageCheckResult{name: pkg, isInstalled: d.IsInstalled(pkg)}
 			}
 		}()
 	}
@@ -61,9 +63,11 @@ func (d *DebianManager) CheckInstalled(packages []string) ([]string, error) {
 	for _, pkg := range packages {
 		jobs <- pkg
 	}
+
 	close(jobs)
 
 	missing := make([]string, 0)
+
 	for range packages {
 		result := <-results
 		if !result.isInstalled {
@@ -71,7 +75,7 @@ func (d *DebianManager) CheckInstalled(packages []string) ([]string, error) {
 		}
 	}
 
-	return missing, nil
+	return missing
 }
 
 // Install installs a list of packages using apt-get.
@@ -84,16 +88,20 @@ func (d *DebianManager) Install(packages []string) error {
 	cmd := execCommand("sudo", append([]string{"apt-get"}, args...)...)
 
 	var stderr bytes.Buffer
+
 	if d.verbose {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
+
 		fmt.Printf("Installing %d packages...\n", len(packages))
 	} else {
 		cmd.Stderr = &stderr
+
 		fmt.Printf("Installing %d packages... ", len(packages))
 	}
 
 	cmd.Stdin = os.Stdin
+
 	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 
 	err := cmd.Run()
@@ -101,6 +109,7 @@ func (d *DebianManager) Install(packages []string) error {
 	if !d.verbose {
 		if err != nil {
 			fmt.Println("failed")
+
 			if stderr.Len() > 0 {
 				fmt.Print(stderr.String())
 			}
@@ -120,6 +129,7 @@ func (d *DebianManager) RefreshPackageLists() error {
 	cmd.Stdin = os.Stdin
 
 	fmt.Println("Updating package lists...")
+
 	return cmd.Run()
 }
 
@@ -133,16 +143,20 @@ func (d *DebianManager) Upgrade(packages []string) error {
 	cmd := execCommand("sudo", append([]string{"apt-get"}, args...)...)
 
 	var stderr bytes.Buffer
+
 	if d.verbose {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
+
 		fmt.Printf("Upgrading %d packages...\n", len(packages))
 	} else {
 		cmd.Stderr = &stderr
+
 		fmt.Printf("Upgrading %d packages... ", len(packages))
 	}
 
 	cmd.Stdin = os.Stdin
+
 	cmd.Env = append(os.Environ(), "DEBIAN_FRONTEND=noninteractive")
 
 	err := cmd.Run()
@@ -150,6 +164,7 @@ func (d *DebianManager) Upgrade(packages []string) error {
 	if !d.verbose {
 		if err != nil {
 			fmt.Println("failed")
+
 			if stderr.Len() > 0 {
 				fmt.Print(stderr.String())
 			}
@@ -208,6 +223,7 @@ func ValidateSudo() error {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
 	return cmd.Run()
 }
 
@@ -215,10 +231,12 @@ func ValidateSudo() error {
 // This is a function variable so it can be swapped in tests.
 var GetInstalledVersion = func(name string) (string, error) {
 	cmd := execCommand("dpkg-query", "-W", "-f=${Version}", name)
+
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
 	}
+
 	return strings.TrimSpace(string(output)), nil
 }
 
@@ -226,6 +244,7 @@ var GetInstalledVersion = func(name string) (string, error) {
 // This is a function variable so it can be swapped in tests.
 var GetAvailableVersion = func(name string) (string, error) {
 	cmd := execCommand("apt-cache", "policy", name)
+
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -238,8 +257,10 @@ var GetAvailableVersion = func(name string) (string, error) {
 			if version == "(none)" {
 				return "", fmt.Errorf("no candidate version")
 			}
+
 			return version, nil
 		}
 	}
+
 	return "", fmt.Errorf("candidate version not found")
 }

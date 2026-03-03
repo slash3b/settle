@@ -1,3 +1,4 @@
+// Package main is the entry point for the settle CLI.
 package main
 
 import (
@@ -9,10 +10,28 @@ import (
 
 const defaultConfigPath = "config.toml"
 
-type PostHook struct {
-	Name        string `toml:"name"`
-	PostInstall string `toml:"post_install"`
-	Sudo        bool   `toml:"sudo"` // run the post-install script with sudo
+// Config represents an entire user's config document.
+type Config struct {
+	Apt      *AptConfig      `toml:"apt"`
+	Dotfiles *DotfilesConfig `toml:"dotfiles"`
+	Git      []GitRepo       `toml:"git"`
+	Go       []GoPackage     `toml:"go"`
+}
+
+func loadConfig(path string) (*Config, error) {
+	data, err := os.ReadFile(path) //nolint:gosec // path is user-supplied config file
+	if err != nil {
+		return nil, fmt.Errorf("error reading config file %s: %w", path, err)
+	}
+
+	var cfg Config
+
+	err = toml.Unmarshal(data, &cfg)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing TOML: %w", err)
+	}
+
+	return &cfg, nil
 }
 
 type AptConfig struct {
@@ -21,10 +40,10 @@ type AptConfig struct {
 	PostHooks []PostHook `toml:"post_hook"`
 }
 
-type DotfileDir struct {
-	Src  string `toml:"src"`
-	Dest string `toml:"dest"`
-	Sudo bool   `toml:"sudo"`
+type PostHook struct {
+	Name        string `toml:"name"`
+	PostInstall string `toml:"post_install"`
+	Sudo        bool   `toml:"sudo"` // run the post-install script with sudo
 }
 
 type DotfilesConfig struct {
@@ -41,6 +60,12 @@ type Dotfile struct {
 	Sudo       bool   `toml:"sudo"`       // use sudo for all fs operations
 }
 
+type DotfileDir struct {
+	Src  string `toml:"src"`
+	Dest string `toml:"dest"`
+	Sudo bool   `toml:"sudo"`
+}
+
 type GitRepo struct {
 	URL  string `toml:"url"`
 	Dest string `toml:"dest"`
@@ -49,26 +74,4 @@ type GitRepo struct {
 type GoPackage struct {
 	Path    string `toml:"path"`
 	Version string `toml:"version"`
-}
-
-// Config represents an entire user's config document.
-type Config struct {
-	Apt      *AptConfig      `toml:"apt"`
-	Dotfiles *DotfilesConfig `toml:"dotfiles"`
-	Git      []GitRepo       `toml:"git"`
-	Go       []GoPackage     `toml:"go"`
-}
-
-func loadConfig(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("error reading config file: %w", err)
-	}
-
-	var cfg Config
-	if err := toml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("error parsing TOML: %w", err)
-	}
-
-	return &cfg, nil
 }

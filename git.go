@@ -14,7 +14,8 @@ func GitClone(url, dest string, verbose bool) error {
 		cmd.Stderr = os.Stderr
 	}
 
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if err != nil {
 		return fmt.Errorf("git clone failed: %w", err)
 	}
 
@@ -30,7 +31,8 @@ func GitPullRepo(dir string, verbose bool) error {
 		pull.Stderr = os.Stderr
 	}
 
-	if err := pull.Run(); err != nil {
+	err := pull.Run()
+	if err != nil {
 		return fmt.Errorf("git pull failed in %s: %w", dir, err)
 	}
 

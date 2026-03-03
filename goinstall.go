@@ -12,14 +12,17 @@ import (
 // This is a function variable so it can be swapped in tests.
 var GoInstall = func(path, version string, verbose bool) error {
 	target := path + "@" + version
-	cmd := exec.Command("go", "install", target)
+
+	cmd := exec.Command("go", "install", target) //nolint:gosec // go install with user-supplied path is intentional
 	if verbose {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
+
 		fmt.Printf("Running: go install %s\n", target)
 	}
 
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if err != nil {
 		return fmt.Errorf("go install %s failed: %w", target, err)
 	}
 
@@ -30,6 +33,7 @@ var GoInstall = func(path, version string, verbose bool) error {
 // This is a function variable so it can be swapped in tests.
 var GoBinPath = func() (string, error) {
 	cmd := exec.Command("go", "env", "GOPATH")
+
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to get GOPATH: %w", err)
@@ -52,9 +56,11 @@ func GoPackageBinaryName(path string) string {
 // IsGoPackageInstalled checks if a binary exists in the given directory.
 func IsGoPackageInstalled(binDir, binaryName string) bool {
 	path := filepath.Join(binDir, binaryName)
+
 	info, err := os.Stat(path)
 	if err != nil {
 		return false
 	}
+
 	return !info.IsDir()
 }

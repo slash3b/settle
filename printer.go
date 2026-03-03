@@ -28,6 +28,7 @@ func PrintPackageTable(packages []PackageStatus) {
 
 	// Separate packages by status
 	var installed []PackageStatus
+
 	skippedCount := 0
 
 	for _, pkg := range packages {
@@ -89,11 +90,13 @@ func PrintListTable(title string, items []ListItem) {
 
 	// Find max widths
 	maxNameLen := len("Name")
+
 	maxStatusLen := len("Status")
 	for _, item := range items {
 		if len(item.Name) > maxNameLen {
 			maxNameLen = len(item.Name)
 		}
+
 		if len(item.Status) > maxStatusLen {
 			maxStatusLen = len(item.Status)
 		}

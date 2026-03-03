@@ -43,6 +43,7 @@ func TestDetectDistro_Unknown(t *testing.T) {
 
 func TestDetectDistro_MissingFile(t *testing.T) {
 	saveMocks(t)
+
 	osReleasePath = "/nonexistent/os-release"
 
 	assert.Equal(t, DistroUnknown, DetectDistro())

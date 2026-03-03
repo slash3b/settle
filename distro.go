@@ -29,10 +29,12 @@ func DetectDistro() Distro {
 	lines := strings.Split(content, "\n")
 
 	var id, idLike string
+
 	for _, line := range lines {
 		if after, ok := strings.CutPrefix(line, "ID="); ok {
 			id = strings.Trim(after, "\"")
 		}
+
 		if after, ok := strings.CutPrefix(line, "ID_LIKE="); ok {
 			idLike = strings.Trim(after, "\"")
 		}
