@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -41,6 +42,32 @@ func saveMocks(t *testing.T) {
 		GoInstall = origGoInstall
 		GoBinPath = origGoBinPath
 	})
+}
+
+// cmdCall records a single exec.Command invocation.
+type cmdCall struct {
+	Name string
+	Args []string
+}
+
+// mockInstalledVersion replaces GetInstalledVersion with a map-based stub.
+func mockInstalledVersion(versions map[string]string) {
+	GetInstalledVersion = func(name string) (string, error) {
+		return versions[name], nil
+	}
+}
+
+// mockAvailableVersion replaces GetAvailableVersion with a map-based stub.
+// Packages not in the map return an error, simulating an unknown package.
+func mockAvailableVersion(versions map[string]string) {
+	GetAvailableVersion = func(name string) (string, error) {
+		v, ok := versions[name]
+		if !ok {
+			return "", fmt.Errorf("unknown package: %s", name)
+		}
+
+		return v, nil
+	}
 }
 
 // writeOsRelease writes a fake os-release file and sets osReleasePath to it.

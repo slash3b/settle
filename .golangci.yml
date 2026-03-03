@@ -46,12 +46,21 @@ linters:
     - testifylint
     - usetesting
 
-linters-settings:
+  exclusions:
+    rules:
+      - path: '(.+)_test\.go'
+        linters:
+          - gosec
+          - goconst
+
+settings:
   exhaustive:
     default-signifies-exhaustive: true
   gosec:
     excludes:
       - G204  # subprocess launched with variable — unavoidable for a tool like settle
+  goconst:
+    ignore-tests: true
   revive:
     rules:
       - name: exported
@@ -59,3 +68,4 @@ linters-settings:
   gocritic:
     disabled-checks:
       - commentedOutCode
+

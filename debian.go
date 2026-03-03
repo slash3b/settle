@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -14,11 +15,12 @@ var execCommand = exec.Command
 // DebianManager handles Debian package operations
 type DebianManager struct {
 	verbose bool
+	w       io.Writer
 }
 
 // NewDebianManager creates a new Debian package manager
-func NewDebianManager(verbose bool) *DebianManager {
-	return &DebianManager{verbose: verbose}
+func NewDebianManager(verbose bool, w io.Writer) *DebianManager {
+	return &DebianManager{verbose: verbose, w: w}
 }
 
 // IsInstalled checks if a package is installed using dpkg-query
@@ -93,11 +95,11 @@ func (d *DebianManager) Install(packages []string) error {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
-		fmt.Printf("Installing %d packages...\n", len(packages))
+		_, _ = fmt.Fprintf(d.w, "Installing %d packages...\n", len(packages))
 	} else {
 		cmd.Stderr = &stderr
 
-		fmt.Printf("Installing %d packages... ", len(packages))
+		_, _ = fmt.Fprintf(d.w, "Installing %d packages... ", len(packages))
 	}
 
 	cmd.Stdin = os.Stdin
@@ -108,13 +110,13 @@ func (d *DebianManager) Install(packages []string) error {
 
 	if !d.verbose {
 		if err != nil {
-			fmt.Println("failed")
+			_, _ = fmt.Fprintln(d.w, "failed")
 
 			if stderr.Len() > 0 {
-				fmt.Print(stderr.String())
+				_, _ = fmt.Fprint(d.w, stderr.String())
 			}
 		} else {
-			fmt.Println("done")
+			_, _ = fmt.Fprintln(d.w, "done")
 		}
 	}
 
@@ -128,7 +130,7 @@ func (d *DebianManager) RefreshPackageLists() error {
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 
-	fmt.Println("Updating package lists...")
+	_, _ = fmt.Fprintln(d.w, "Updating package lists...")
 
 	return cmd.Run()
 }
@@ -148,11 +150,11 @@ func (d *DebianManager) Upgrade(packages []string) error {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
-		fmt.Printf("Upgrading %d packages...\n", len(packages))
+		_, _ = fmt.Fprintf(d.w, "Upgrading %d packages...\n", len(packages))
 	} else {
 		cmd.Stderr = &stderr
 
-		fmt.Printf("Upgrading %d packages... ", len(packages))
+		_, _ = fmt.Fprintf(d.w, "Upgrading %d packages... ", len(packages))
 	}
 
 	cmd.Stdin = os.Stdin
@@ -163,13 +165,13 @@ func (d *DebianManager) Upgrade(packages []string) error {
 
 	if !d.verbose {
 		if err != nil {
-			fmt.Println("failed")
+			_, _ = fmt.Fprintln(d.w, "failed")
 
 			if stderr.Len() > 0 {
-				fmt.Print(stderr.String())
+				_, _ = fmt.Fprint(d.w, stderr.String())
 			}
 		} else {
-			fmt.Println("done")
+			_, _ = fmt.Fprintln(d.w, "done")
 		}
 	}
 
@@ -184,9 +186,9 @@ func (d *DebianManager) RunPostInstall(packageName, script string, sudo bool) er
 	}
 
 	if d.verbose {
-		fmt.Printf("Running post-install script for %s...\n", packageName)
+		_, _ = fmt.Fprintf(d.w, "Running post-install script for %s...\n", packageName)
 	} else {
-		fmt.Printf("Running post-install for %s... ", packageName)
+		_, _ = fmt.Fprintf(d.w, "Running post-install for %s... ", packageName)
 	}
 
 	var cmd *exec.Cmd
@@ -207,9 +209,9 @@ func (d *DebianManager) RunPostInstall(packageName, script string, sudo bool) er
 
 	if !d.verbose {
 		if err != nil {
-			fmt.Println("failed")
+			_, _ = fmt.Fprintln(d.w, "failed")
 		} else {
-			fmt.Println("done")
+			_, _ = fmt.Fprintln(d.w, "done")
 		}
 	}
 

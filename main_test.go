@@ -23,7 +23,7 @@ func TestPrintVersion(t *testing.T) {
 func TestPrintUsage(t *testing.T) {
 	var w strings.Builder
 
-	printUsage(&w)
+	printUsage(&w)()
 
 	out := w.String()
 

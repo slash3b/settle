@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -17,22 +18,24 @@ type Settle struct {
 	config  *Config
 	verbose bool
 	dryRun  bool
+	w       io.Writer
 }
 
 // NewSettle creates a new Settle orchestrator
-func NewSettle(config *Config, verbose, dryRun bool) *Settle {
+func NewSettle(config *Config, verbose, dryRun bool, w io.Writer) *Settle {
 	return &Settle{
 		config:  config,
 		verbose: verbose,
 		dryRun:  dryRun,
+		w:       w,
 	}
 }
 
 // Apply applies the configuration: installs missing packages, links dotfiles, clones repos.
 func (s *Settle) Apply() error {
 	if s.dryRun {
-		fmt.Println("[dry-run mode - no changes will be made]")
-		fmt.Println()
+		_, _ = fmt.Fprintln(s.w, "[dry-run mode - no changes will be made]")
+		_, _ = fmt.Fprintln(s.w)
 	}
 
 	managersFound := 0
@@ -80,7 +83,7 @@ func (s *Settle) Apply() error {
 	}
 
 	if len(errs) == 0 {
-		fmt.Println("Done!")
+		_, _ = fmt.Fprintln(s.w, "Done!")
 	}
 
 	return errors.Join(errs...)
@@ -107,14 +110,14 @@ func (s *Settle) Update() error {
 				allPackages = append(allPackages, pkg.Name)
 			}
 
-			manager := NewDebianManager(s.verbose)
+			manager := NewDebianManager(s.verbose, s.w)
 
 			if len(allPackages) > 0 {
-				fmt.Printf("Updating %d managed packages...\n", len(allPackages))
+				_, _ = fmt.Fprintf(s.w, "Updating %d managed packages...\n", len(allPackages))
 
 				if s.dryRun {
-					fmt.Println("[dry-run] Would run: apt-get update")
-					fmt.Printf("[dry-run] Would upgrade: %v\n", allPackages)
+					_, _ = fmt.Fprintln(s.w, "[dry-run] Would run: apt-get update")
+					_, _ = fmt.Fprintf(s.w, "[dry-run] Would upgrade: %v\n", allPackages)
 				} else {
 					err := manager.RefreshPackageLists()
 					if err != nil {
@@ -145,7 +148,7 @@ func (s *Settle) Update() error {
 	}
 
 	if !hasApt && !hasGit && !hasGo {
-		fmt.Println("nothing to update")
+		_, _ = fmt.Fprintln(s.w, "nothing to update")
 
 		return nil
 	}
@@ -180,10 +183,10 @@ func (s *Settle) applyApt() error {
 	}
 
 	if s.verbose {
-		fmt.Printf("Detected distribution: %s\n", distro)
+		_, _ = fmt.Fprintf(s.w, "Detected distribution: %s\n", distro)
 	}
 
-	manager := NewDebianManager(s.verbose)
+	manager := NewDebianManager(s.verbose, s.w)
 	aptCfg := s.config.Apt
 
 	allPackages := make([]string, 0, len(aptCfg.Packages)+len(aptCfg.PostHooks))
@@ -194,11 +197,11 @@ func (s *Settle) applyApt() error {
 	}
 
 	if len(allPackages) == 0 {
-		fmt.Println("No apt packages configured")
+		_, _ = fmt.Fprintln(s.w, "No apt packages configured")
 		return nil
 	}
 
-	fmt.Printf("Checking %d apt packages...\n", len(allPackages))
+	_, _ = fmt.Fprintf(s.w, "Checking %d apt packages...\n", len(allPackages))
 
 	missingPackages := manager.CheckInstalled(allPackages)
 
@@ -208,8 +211,8 @@ func (s *Settle) applyApt() error {
 	}
 
 	installedCount := len(allPackages) - len(missingPackages)
-	fmt.Printf("Already installed: %d\n", installedCount)
-	fmt.Printf("Need to install: %d\n", len(missingPackages))
+	_, _ = fmt.Fprintf(s.w, "Already installed: %d\n", installedCount)
+	_, _ = fmt.Fprintf(s.w, "Need to install: %d\n", len(missingPackages))
 
 	// Filter out unknown packages
 	var (
@@ -228,24 +231,24 @@ func (s *Settle) applyApt() error {
 	}
 
 	if len(unknown) > 0 {
-		fmt.Printf("\nSkipping %d unknown packages:\n", len(unknown))
+		_, _ = fmt.Fprintf(s.w, "\nSkipping %d unknown packages:\n", len(unknown))
 
 		for _, pkg := range unknown {
-			fmt.Printf("  - %s\n", pkg)
+			_, _ = fmt.Fprintf(s.w, "  - %s\n", pkg)
 		}
 	}
 
 	if len(installable) > 0 {
 		if s.dryRun {
-			fmt.Println("\n[dry-run] Would install:")
+			_, _ = fmt.Fprintln(s.w, "\n[dry-run] Would install:")
 
 			for _, pkg := range installable {
-				fmt.Printf("  - %s\n", pkg)
+				_, _ = fmt.Fprintf(s.w, "  - %s\n", pkg)
 			}
 
 			for _, pkg := range aptCfg.PostHooks {
 				if pkg.PostInstall != "" && missingSet[pkg.Name] {
-					fmt.Printf("\n[dry-run] Would run post-install for %s\n", pkg.Name)
+					_, _ = fmt.Fprintf(s.w, "\n[dry-run] Would run post-install for %s\n", pkg.Name)
 				}
 			}
 		} else {
@@ -289,7 +292,7 @@ func (s *Settle) applyApt() error {
 			}
 		}
 	} else if len(missingPackages) == 0 {
-		fmt.Println("All packages already installed!")
+		_, _ = fmt.Fprintln(s.w, "All packages already installed!")
 	}
 
 	// Print results table
@@ -313,7 +316,7 @@ func (s *Settle) applyApt() error {
 		statuses = append(statuses, PackageStatus{Name: pkg, Status: status})
 	}
 
-	PrintPackageTable(statuses)
+	PrintPackageTable(s.w, statuses)
 
 	return nil
 }
@@ -323,13 +326,13 @@ func (s *Settle) applyDotfiles() error {
 	cfg := s.config.Dotfiles
 
 	if len(cfg.Files) == 0 && len(cfg.Dirs) == 0 {
-		fmt.Println("No dotfiles configured")
+		_, _ = fmt.Fprintln(s.w, "No dotfiles configured")
 		return nil
 	}
 
-	manager := NewDotfilesManager(cfg.SourceDir, s.verbose)
+	manager := NewDotfilesManager(cfg.SourceDir, s.verbose, s.w)
 
-	fmt.Printf("\nChecking %d dotfile links...\n", len(cfg.Files)+len(cfg.Dirs))
+	_, _ = fmt.Fprintf(s.w, "\nChecking %d dotfile links...\n", len(cfg.Files)+len(cfg.Dirs))
 
 	linked := 0
 	skipped := 0
@@ -347,9 +350,9 @@ func (s *Settle) applyDotfiles() error {
 			linked++
 
 			if s.dryRun {
-				fmt.Printf("[dry-run] Would link: %s -> %s\n", link.Dest, link.Src)
+				_, _ = fmt.Fprintf(s.w, "[dry-run] Would link: %s -> %s\n", link.Dest, link.Src)
 			} else if s.verbose {
-				fmt.Printf("Linked: %s -> %s\n", link.Dest, link.Src)
+				_, _ = fmt.Fprintf(s.w, "Linked: %s -> %s\n", link.Dest, link.Src)
 			}
 		} else {
 			skipped++
@@ -367,9 +370,9 @@ func (s *Settle) applyDotfiles() error {
 			linked++
 
 			if s.dryRun {
-				fmt.Printf("[dry-run] Would link dir: %s -> %s\n", dir.Dest, dir.Src)
+				_, _ = fmt.Fprintf(s.w, "[dry-run] Would link dir: %s -> %s\n", dir.Dest, dir.Src)
 			} else if s.verbose {
-				fmt.Printf("Linked dir: %s -> %s\n", dir.Dest, dir.Src)
+				_, _ = fmt.Fprintf(s.w, "Linked dir: %s -> %s\n", dir.Dest, dir.Src)
 			}
 		} else {
 			skipped++
@@ -377,9 +380,9 @@ func (s *Settle) applyDotfiles() error {
 	}
 
 	if s.dryRun {
-		fmt.Printf("\n[dry-run] Would create %d links, %d already correct\n", linked, skipped)
+		_, _ = fmt.Fprintf(s.w, "\n[dry-run] Would create %d links, %d already correct\n", linked, skipped)
 	} else {
-		fmt.Printf("Created %d links, %d already correct\n", linked, skipped)
+		_, _ = fmt.Fprintf(s.w, "Created %d links, %d already correct\n", linked, skipped)
 	}
 
 	return errors.Join(errs...)
@@ -387,7 +390,7 @@ func (s *Settle) applyDotfiles() error {
 
 // applyGit clones missing git repos.
 func (s *Settle) applyGit() error {
-	fmt.Printf("\nChecking %d git repos...\n", len(s.config.Git))
+	_, _ = fmt.Fprintf(s.w, "\nChecking %d git repos...\n", len(s.config.Git))
 
 	var (
 		statuses []PackageStatus
@@ -419,7 +422,7 @@ func (s *Settle) applyGit() error {
 		}
 
 		if s.dryRun {
-			fmt.Printf("[dry-run] Would clone: %s -> %s\n", repo.URL, repo.Dest)
+			_, _ = fmt.Fprintf(s.w, "[dry-run] Would clone: %s -> %s\n", repo.URL, repo.Dest)
 			statuses = append(statuses, PackageStatus{Name: repo.Dest, Status: StatusInstalled})
 
 			continue
@@ -435,7 +438,7 @@ func (s *Settle) applyGit() error {
 		statuses = append(statuses, PackageStatus{Name: repo.Dest, Status: StatusInstalled})
 	}
 
-	PrintPackageTable(statuses)
+	PrintPackageTable(s.w, statuses)
 
 	return errors.Join(errs...)
 }
@@ -447,7 +450,7 @@ func (s *Settle) applyGo() error {
 		return fmt.Errorf("cannot determine Go bin path: %w", err)
 	}
 
-	fmt.Printf("\nChecking %d go packages...\n", len(s.config.Go))
+	_, _ = fmt.Fprintf(s.w, "\nChecking %d go packages...\n", len(s.config.Go))
 
 	var (
 		statuses []PackageStatus
@@ -463,7 +466,7 @@ func (s *Settle) applyGo() error {
 		}
 
 		if s.dryRun {
-			fmt.Printf("[dry-run] Would install: go install %s@%s\n", pkg.Path, pkg.Version)
+			_, _ = fmt.Fprintf(s.w, "[dry-run] Would install: go install %s@%s\n", pkg.Path, pkg.Version)
 
 			statuses = append(statuses, PackageStatus{Name: binName, Status: StatusInstalled})
 
@@ -479,14 +482,14 @@ func (s *Settle) applyGo() error {
 		statuses = append(statuses, PackageStatus{Name: binName, Status: StatusInstalled})
 	}
 
-	PrintPackageTable(statuses)
+	PrintPackageTable(s.w, statuses)
 
 	return errors.Join(errs...)
 }
 
 // updateGit pulls latest changes for all cloned git repos.
 func (s *Settle) updateGit() error {
-	fmt.Printf("\nUpdating %d git repos...\n", len(s.config.Git))
+	_, _ = fmt.Fprintf(s.w, "\nUpdating %d git repos...\n", len(s.config.Git))
 
 	var errs []error
 
@@ -496,13 +499,13 @@ func (s *Settle) updateGit() error {
 
 		_, err := os.Stat(gitDir)
 		if os.IsNotExist(err) {
-			fmt.Printf("Warning: %s not cloned, run settle first\n", repo.Dest)
+			_, _ = fmt.Fprintf(s.w, "Warning: %s not cloned, run settle first\n", repo.Dest)
 
 			continue
 		}
 
 		if s.dryRun {
-			fmt.Printf("[dry-run] Would pull: %s\n", repo.Dest)
+			_, _ = fmt.Fprintf(s.w, "[dry-run] Would pull: %s\n", repo.Dest)
 
 			continue
 		}
@@ -518,13 +521,13 @@ func (s *Settle) updateGit() error {
 
 // updateGo re-installs all Go packages at their configured versions.
 func (s *Settle) updateGo() error {
-	fmt.Printf("\nUpdating %d go packages...\n", len(s.config.Go))
+	_, _ = fmt.Fprintf(s.w, "\nUpdating %d go packages...\n", len(s.config.Go))
 
 	var errs []error
 
 	for _, pkg := range s.config.Go {
 		if s.dryRun {
-			fmt.Printf("[dry-run] Would install: go install %s@%s\n", pkg.Path, pkg.Version)
+			_, _ = fmt.Fprintf(s.w, "[dry-run] Would install: go install %s@%s\n", pkg.Path, pkg.Version)
 
 			continue
 		}
@@ -549,7 +552,7 @@ type packageInfo struct {
 
 // listApt lists all apt packages and their status.
 func (s *Settle) listApt() {
-	manager := NewDebianManager(s.verbose)
+	manager := NewDebianManager(s.verbose, s.w)
 	cfg := s.config.Apt
 
 	allPackages := make([]string, 0, len(cfg.Packages)+len(cfg.PostHooks))
@@ -652,7 +655,7 @@ func (s *Settle) listApt() {
 		items = append(items, item)
 	}
 
-	PrintListTable("Packages", items)
+	PrintListTable(s.w, "Packages", items)
 }
 
 // listDotfiles lists all dotfiles and their status.
@@ -663,7 +666,7 @@ func (s *Settle) listDotfiles() {
 		return
 	}
 
-	manager := NewDotfilesManager(cfg.SourceDir, s.verbose)
+	manager := NewDotfilesManager(cfg.SourceDir, s.verbose, s.w)
 	red := color.New(color.FgRed)
 	yellow := color.New(color.FgYellow)
 	green := color.New(color.FgGreen)
@@ -718,7 +721,7 @@ func (s *Settle) listDotfiles() {
 		items = append(items, linkStatusItem(dir.Dest, status, err))
 	}
 
-	PrintListTable("Dotfiles", items)
+	PrintListTable(s.w, "Dotfiles", items)
 }
 
 // listGit lists all git repos and their status.
@@ -759,14 +762,14 @@ func (s *Settle) listGit() {
 		items = append(items, item)
 	}
 
-	PrintListTable("Git Repos", items)
+	PrintListTable(s.w, "Git Repos", items)
 }
 
 // listGo lists all Go packages and their installed status.
 func (s *Settle) listGo() {
 	binDir, err := GoBinPath()
 	if err != nil {
-		fmt.Printf("Warning: cannot determine Go bin path: %v\n", err)
+		_, _ = fmt.Fprintf(s.w, "Warning: cannot determine Go bin path: %v\n", err)
 		return
 	}
 
@@ -793,5 +796,5 @@ func (s *Settle) listGo() {
 		items = append(items, item)
 	}
 
-	PrintListTable("Go Packages", items)
+	PrintListTable(s.w, "Go Packages", items)
 }

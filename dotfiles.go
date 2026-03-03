@@ -21,13 +21,15 @@ const (
 type DotfilesManager struct {
 	sourceDir string
 	verbose   bool
+	w         io.Writer
 }
 
 // NewDotfilesManager creates a new dotfiles manager
-func NewDotfilesManager(sourceDir string, verbose bool) *DotfilesManager {
+func NewDotfilesManager(sourceDir string, verbose bool, w io.Writer) *DotfilesManager {
 	return &DotfilesManager{
 		sourceDir: expandPath(sourceDir),
 		verbose:   verbose,
+		w:         w,
 	}
 }
 
@@ -244,7 +246,7 @@ func (d *DotfilesManager) applyLink(src, dest string, status LinkStatus, dryRun,
 			}
 
 			if d.verbose {
-				fmt.Printf("  backed up %s -> %s\n", dest, backupPath)
+				_, _ = fmt.Fprintf(d.w, "  backed up %s -> %s\n", dest, backupPath)
 			}
 
 			err = runSudo("ln", "-sf", src, dest)
@@ -258,7 +260,7 @@ func (d *DotfilesManager) applyLink(src, dest string, status LinkStatus, dryRun,
 			}
 
 			if d.verbose {
-				fmt.Printf("  backed up %s -> %s\n", dest, backupPath)
+				_, _ = fmt.Fprintf(d.w, "  backed up %s -> %s\n", dest, backupPath)
 			}
 
 			err = os.Symlink(src, dest)
@@ -388,7 +390,7 @@ func (d *DotfilesManager) ApplyDir(dir DotfileDir, dryRun bool) (bool, error) {
 		}
 
 		if d.verbose {
-			fmt.Printf("  backed up %s -> %s\n", dest, backupPath)
+			_, _ = fmt.Fprintf(d.w, "  backed up %s -> %s\n", dest, backupPath)
 		}
 
 		return true, nil

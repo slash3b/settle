@@ -18,7 +18,7 @@ var GoInstall = func(path, version string, verbose bool) error {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 
-		fmt.Printf("Running: go install %s\n", target)
+		_, _ = fmt.Printf("Running: go install %s\n", target)
 	}
 
 	err := cmd.Run()

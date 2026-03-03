@@ -41,7 +41,7 @@ func main() {
 	}
 
 	if runtime.GOOS != "linux" {
-		fmt.Fprintf(os.Stderr, "%s is not supported\n", runtime.GOOS)
+		_, _ = fmt.Fprintf(os.Stderr, "%s is not supported\n", runtime.GOOS)
 
 		os.Exit(1)
 	}
@@ -52,27 +52,27 @@ func main() {
 	go func() {
 		<-sigChan
 
-		fmt.Println("\n\ninterrupted! cleaning up...")
+		_, _ = fmt.Println("\n\ninterrupted! cleaning up...")
 
 		os.Exit(2)
 	}()
 
 	cfg, err := loadConfig(configPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "failed to load config %s, err %v\n", configPath, err)
+		_, _ = fmt.Fprintf(os.Stderr, "failed to load config %s, err %v\n", configPath, err)
 
 		os.Exit(1)
 	}
 
 	var (
-		settle = NewSettle(cfg, verbose, dryRun)
+		settle = NewSettle(cfg, verbose, dryRun, os.Stdout)
 		args   = flag.Args()
 	)
 
 	if len(args) == 0 {
 		err := settle.Apply()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 
 			os.Exit(1)
 		}
@@ -86,12 +86,12 @@ func main() {
 	case "update":
 		err := settle.Update()
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			_, _ = fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 
 			os.Exit(1)
 		}
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", args[0])
+		_, _ = fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", args[0])
 
 		usage()
 
