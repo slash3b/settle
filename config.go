@@ -16,6 +16,7 @@ type Config struct {
 	Dotfiles *DotfilesConfig `toml:"dotfiles"`
 	Git      []GitRepo       `toml:"git"`
 	Go       []GoPackage     `toml:"go"`
+	Scripts  []Script        `toml:"scripts"`
 }
 
 func loadConfig(path string) (*Config, error) {
@@ -74,4 +75,10 @@ type GitRepo struct {
 type GoPackage struct {
 	Path    string `toml:"path"`
 	Version string `toml:"version"`
+}
+
+type Script struct {
+	Bin     string   `toml:"bin"`
+	Run     string   `toml:"run"`
+	Plugins []string `toml:"plugins"`
 }

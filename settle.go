@@ -78,8 +78,17 @@ func (s *Settle) Apply() error {
 		}
 	}
 
+	if len(s.config.Scripts) > 0 {
+		managersFound++
+
+		err := s.applyScripts()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("scripts: %w", err))
+		}
+	}
+
 	if managersFound == 0 {
-		return fmt.Errorf("no packages, dotfiles, git repos, or go packages configured in config.toml")
+		return fmt.Errorf("no packages, dotfiles, git repos, go packages, or scripts configured in config.toml")
 	}
 
 	if len(errs) == 0 {
@@ -92,10 +101,11 @@ func (s *Settle) Apply() error {
 // Update upgrades all managed packages to their latest versions.
 func (s *Settle) Update() error {
 	var (
-		hasApt = s.config.Apt != nil
-		hasGit = len(s.config.Git) > 0
-		hasGo  = len(s.config.Go) > 0
-		errs   []error
+		hasApt     = s.config.Apt != nil
+		hasGit     = len(s.config.Git) > 0
+		hasGo      = len(s.config.Go) > 0
+		hasScripts = len(s.config.Scripts) > 0
+		errs       []error
 	)
 
 	if hasApt {
@@ -147,7 +157,14 @@ func (s *Settle) Update() error {
 		}
 	}
 
-	if !hasApt && !hasGit && !hasGo {
+	if hasScripts {
+		err := s.updateScripts()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("scripts: %w", err))
+		}
+	}
+
+	if !hasApt && !hasGit && !hasGo && !hasScripts {
 		_, _ = fmt.Fprintln(s.w, "nothing to update")
 
 		return nil
@@ -172,6 +189,10 @@ func (s *Settle) List() {
 
 	if len(s.config.Go) > 0 {
 		s.listGo()
+	}
+
+	if len(s.config.Scripts) > 0 {
+		s.listScripts()
 	}
 }
 
@@ -763,6 +784,101 @@ func (s *Settle) listGit() {
 	}
 
 	PrintListTable(s.w, "Git Repos", items)
+}
+
+// applyScripts installs missing script-based tools and their plugins.
+func (s *Settle) applyScripts() error {
+	_, _ = fmt.Fprintf(s.w, "\nChecking %d scripts...\n", len(s.config.Scripts))
+
+	var (
+		statuses []PackageStatus
+		errs     []error
+	)
+
+	for _, script := range s.config.Scripts {
+		if IsScriptInstalled(script.Bin) {
+			statuses = append(statuses, PackageStatus{Name: script.Bin, Status: StatusSkipped})
+			continue
+		}
+
+		if s.dryRun {
+			_, _ = fmt.Fprintf(s.w, "[dry-run] Would run: %s\n", script.Run)
+			for _, plugin := range script.Plugins {
+				_, _ = fmt.Fprintf(s.w, "[dry-run] Would run plugin: %s\n", plugin)
+			}
+			statuses = append(statuses, PackageStatus{Name: script.Bin, Status: StatusInstalled})
+			continue
+		}
+
+		if err := RunScript(script.Run, s.verbose, s.w); err != nil {
+			errs = append(errs, fmt.Errorf("install %s: %w", script.Bin, err))
+			continue
+		}
+
+		for _, plugin := range script.Plugins {
+			if err := RunScript(plugin, s.verbose, s.w); err != nil {
+				errs = append(errs, fmt.Errorf("plugin for %s: %w", script.Bin, err))
+			}
+		}
+
+		statuses = append(statuses, PackageStatus{Name: script.Bin, Status: StatusInstalled})
+	}
+
+	PrintPackageTable(s.w, statuses)
+
+	return errors.Join(errs...)
+}
+
+// updateScripts re-runs all scripts and their plugins.
+func (s *Settle) updateScripts() error {
+	_, _ = fmt.Fprintf(s.w, "\nUpdating %d scripts...\n", len(s.config.Scripts))
+
+	var errs []error
+
+	for _, script := range s.config.Scripts {
+		if s.dryRun {
+			_, _ = fmt.Fprintf(s.w, "[dry-run] Would run: %s\n", script.Run)
+			for _, plugin := range script.Plugins {
+				_, _ = fmt.Fprintf(s.w, "[dry-run] Would run plugin: %s\n", plugin)
+			}
+			continue
+		}
+
+		if err := RunScript(script.Run, s.verbose, s.w); err != nil {
+			errs = append(errs, fmt.Errorf("update %s: %w", script.Bin, err))
+			continue
+		}
+
+		for _, plugin := range script.Plugins {
+			if err := RunScript(plugin, s.verbose, s.w); err != nil {
+				errs = append(errs, fmt.Errorf("plugin for %s: %w", script.Bin, err))
+			}
+		}
+	}
+
+	return errors.Join(errs...)
+}
+
+// listScripts lists all script-managed tools and their installed status.
+func (s *Settle) listScripts() {
+	red := color.New(color.FgRed)
+	green := color.New(color.FgGreen)
+
+	items := make([]ListItem, 0, len(s.config.Scripts))
+
+	for _, script := range s.config.Scripts {
+		item := ListItem{Name: script.Bin}
+		if IsScriptInstalled(script.Bin) {
+			item.Status = "installed"
+			item.Color = green
+		} else {
+			item.Status = statusMissing
+			item.Color = red
+		}
+		items = append(items, item)
+	}
+
+	PrintListTable(s.w, "Scripts", items)
 }
 
 // listGo lists all Go packages and their installed status.
