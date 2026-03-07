@@ -126,11 +126,30 @@ func (d *DebianManager) Install(packages []string) error {
 // RefreshPackageLists runs apt-get update
 func (d *DebianManager) RefreshPackageLists() error {
 	cmd := execCommand("sudo", "apt-get", "update", "-y")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin
 
-	_, _ = fmt.Fprintln(d.w, "Updating package lists...")
+	_, _ = fmt.Fprintf(d.w, "Updating package lists... ")
+
+	if d.verbose {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		_, _ = fmt.Fprintln(d.w)
+	} else {
+		var buf bytes.Buffer
+		cmd.Stdout = &buf
+		cmd.Stderr = &buf
+
+		if err := cmd.Run(); err != nil {
+			_, _ = fmt.Fprintln(d.w, "failed")
+			_, _ = d.w.Write(buf.Bytes())
+			return err
+		}
+
+		_, _ = fmt.Fprintln(d.w, "done")
+
+		return nil
+	}
 
 	return cmd.Run()
 }
