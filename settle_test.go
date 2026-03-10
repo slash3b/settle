@@ -25,7 +25,7 @@ func TestApply_NoConfig(t *testing.T) {
 
 	err := s.Apply()
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no packages, dotfiles, git repos, or go packages configured")
+	assert.Contains(t, err.Error(), "no packages, dotfiles, git repos, go packages, or scripts configured")
 }
 
 func TestApply_AllInstalled(t *testing.T) {
