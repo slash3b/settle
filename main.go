@@ -12,8 +12,8 @@ import (
 
 var (
 	// version and buildTime are set via ldflags at build time
-	version   = "development"
-	buildTime = ""
+	Version   = "development"
+	BuildTime = ""
 
 	verbose     bool
 	configPath  string
