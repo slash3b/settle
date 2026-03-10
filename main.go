@@ -105,10 +105,10 @@ func printVersion(w io.Writer) {
 		exe = "unknown"
 	}
 
-	fmt.Fprintf(w, "%-9s %s\n", "version", version) //nolint:errcheck
+	fmt.Fprintf(w, "%-9s %s\n", "version", Version) //nolint:errcheck
 
-	if buildTime != "" {
-		fmt.Fprintf(w, "%-9s %s\n", "built", buildTime) //nolint:errcheck
+	if BuildTime != "" {
+		fmt.Fprintf(w, "%-9s %s\n", "built", BuildTime) //nolint:errcheck
 	}
 
 	fmt.Fprintf(w, "%-9s %s\n", "binary", exe) //nolint:errcheck
