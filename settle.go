@@ -806,17 +806,21 @@ func (s *Settle) applyScripts() error {
 			for _, plugin := range script.Plugins {
 				_, _ = fmt.Fprintf(s.w, "[dry-run] Would run plugin: %s\n", plugin)
 			}
+
 			statuses = append(statuses, PackageStatus{Name: script.Bin, Status: StatusInstalled})
+
 			continue
 		}
 
-		if err := RunScript(script.Run, s.verbose, s.w); err != nil {
+		err := RunScript(script.Run, s.verbose, s.w)
+		if err != nil {
 			errs = append(errs, fmt.Errorf("install %s: %w", script.Bin, err))
 			continue
 		}
 
 		for _, plugin := range script.Plugins {
-			if err := RunScript(plugin, s.verbose, s.w); err != nil {
+			err = RunScript(plugin, s.verbose, s.w)
+			if err != nil {
 				errs = append(errs, fmt.Errorf("plugin for %s: %w", script.Bin, err))
 			}
 		}
@@ -841,16 +845,19 @@ func (s *Settle) updateScripts() error {
 			for _, plugin := range script.Plugins {
 				_, _ = fmt.Fprintf(s.w, "[dry-run] Would run plugin: %s\n", plugin)
 			}
+
 			continue
 		}
 
-		if err := RunScript(script.Run, s.verbose, s.w); err != nil {
+		err := RunScript(script.Run, s.verbose, s.w)
+		if err != nil {
 			errs = append(errs, fmt.Errorf("update %s: %w", script.Bin, err))
 			continue
 		}
 
 		for _, plugin := range script.Plugins {
-			if err := RunScript(plugin, s.verbose, s.w); err != nil {
+			err = RunScript(plugin, s.verbose, s.w)
+			if err != nil {
 				errs = append(errs, fmt.Errorf("plugin for %s: %w", script.Bin, err))
 			}
 		}
@@ -875,6 +882,7 @@ func (s *Settle) listScripts() {
 			item.Status = statusMissing
 			item.Color = red
 		}
+
 		items = append(items, item)
 	}
 

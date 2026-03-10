@@ -27,10 +27,12 @@ func RunScript(script string, verbose bool, w io.Writer) error {
 		cmd.Stderr = w
 	} else {
 		var buf bytes.Buffer
+
 		cmd.Stdout = &buf
 		cmd.Stderr = &buf
 
-		if err := cmd.Run(); err != nil {
+		err := cmd.Run()
+		if err != nil {
 			_, _ = w.Write(buf.Bytes())
 			return fmt.Errorf("script failed: %w", err)
 		}
@@ -38,7 +40,8 @@ func RunScript(script string, verbose bool, w io.Writer) error {
 		return nil
 	}
 
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if err != nil {
 		return fmt.Errorf("script failed: %w", err)
 	}
 

@@ -137,12 +137,15 @@ func (d *DebianManager) RefreshPackageLists() error {
 		_, _ = fmt.Fprintln(d.w)
 	} else {
 		var buf bytes.Buffer
+
 		cmd.Stdout = &buf
 		cmd.Stderr = &buf
 
-		if err := cmd.Run(); err != nil {
+		err := cmd.Run()
+		if err != nil {
 			_, _ = fmt.Fprintln(d.w, "failed")
 			_, _ = d.w.Write(buf.Bytes())
+
 			return err
 		}
 
