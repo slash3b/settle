@@ -34,3 +34,9 @@ fmt:
 .PHONY: lint
 lint:
 	@golangci-lint run ./...
+
+.PHONY: check
+check:
+	@unformatted=$$(gofumpt -l .); if [ -n "$$unformatted" ]; then echo "unformatted files:\n$$unformatted"; exit 1; fi
+	go test -race -shuffle=on -timeout=1m -count=1 ./...
+	golangci-lint run ./...
