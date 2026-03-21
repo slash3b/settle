@@ -32,6 +32,12 @@ func loadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("error parsing TOML: %w", err)
 	}
 
+	for i := range cfg.Go {
+		if cfg.Go[i].Version == "" {
+			cfg.Go[i].Version = "latest"
+		}
+	}
+
 	return &cfg, nil
 }
 

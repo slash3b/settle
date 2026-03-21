@@ -233,6 +233,18 @@ version = "v0.25.0"
 	assert.Equal(t, "v0.25.0", cfg.Go[1].Version)
 }
 
+func TestLoadConfig_GoDefaultVersion(t *testing.T) {
+	path := withTempConfig(t, `
+[[go]]
+path = "github.com/some/tool/cmd/tool"
+`)
+	cfg, err := loadConfig(path)
+	require.NoError(t, err)
+
+	assert.Len(t, cfg.Go, 1)
+	assert.Equal(t, "latest", cfg.Go[0].Version)
+}
+
 func TestLoadConfig_EmptyGo(t *testing.T) {
 	path := withTempConfig(t, `
 [apt]
